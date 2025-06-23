@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Loader2, RefreshCw } from 'lucide-react';
 
-const COLORS: any = {
+const COLORS: Record<string, string> = {
   'SOL-PERP': '#8b5cf6',
   'ETH-PERP': '#627eea',
   'BTC-PERP': '#f7931a',
@@ -462,7 +462,7 @@ function DriftFundingRatesChart() {
             <p><strong>APR Formula:</strong> Hourly rate × 24 × 365 gives the annualized percentage rate.</p>
             <p><strong>Market Comparison:</strong> Compare rates across markets to identify arbitrage opportunities.</p>
             <p><strong>Risk Assessment:</strong> Higher funding rates may indicate higher volatility and risk.</p>
-            <p><strong>Data Source:</strong> Real-time data from Drift Protocol's public API with 30-day history.</p>
+            <p><strong>Data Source:</strong> Real-time data from Drift Protocol&apos;s public API with 30-day history.</p>
           </div>
         </CardContent>
       </Card>

@@ -6,7 +6,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Loader2, RefreshCw } from 'lucide-react';
 
-const TOKENS = ['PURR',  'SOL', 'ETH', 'BTC', 'HYPE', 'ZORA'];
+const TOKENS = ['PURR', 'SOL', 'ETH', 'BTC', 'HYPE', 'ZORA'];
 const COLORS : any = {
   'PURR': '#8b5cf6',
   // 'FART': '#f59e0b', 
