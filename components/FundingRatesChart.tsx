@@ -60,6 +60,7 @@ async function fetchFundingHistory(coin: string, startTime: number, endTime: num
       })
     });
     
+    
     if (!response.ok) {
       throw new Error(`HTTP error! status: ${response.status}`);
     }
@@ -90,6 +91,7 @@ function FundingRatesChart() {
       );
       
       const results = await Promise.all(promises);
+      console.log("Funding data fetched for tokens:", results);
       
       // Combine all data into a single array with timestamps
       const combinedData: Record<number, ProcessedDataPoint> = {};
@@ -157,6 +159,8 @@ function FundingRatesChart() {
       color: COLORS.ZORA,
     },
   };
+
+  console.log("TOKEN", TOKENS);
 
   // Calculate some stats
   const getTokenStats = (token: string): TokenStats => {

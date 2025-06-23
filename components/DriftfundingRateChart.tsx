@@ -287,6 +287,7 @@ function DriftFundingRatesChart() {
     );
   };
 
+
   return (
     <div className="w-full mx-auto p-6 space-y-6">
       <Card>
