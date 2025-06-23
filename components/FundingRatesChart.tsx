@@ -6,19 +6,46 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Loader2, RefreshCw } from 'lucide-react';
 
-const TOKENS = ['PURR', 'SOL', 'ETH', 'BTC', 'HYPE', 'ZORA'];
-const COLORS : any = {
+const TOKENS = ['PURR', 'SOL', 'ETH', 'BTC', 'HYPE', 'ZORA'] as const;
+
+type TokenType = typeof TOKENS[number];
+
+const COLORS: Record<TokenType, string> = {
   'PURR': '#8b5cf6',
-  // 'FART': '#f59e0b', 
   'SOL': '#06d6a0',
   'ETH': '#627eea',
   'BTC': '#f7931a',
   'HYPE': '#b1931a',
   'ZORA': '#A6d6a0'
-
 };
 
-async function fetchFundingHistory(coin: string, startTime: number, endTime: number) {
+interface FundingHistoryEntry {
+  time: number;
+  fundingRate: string;
+}
+
+interface ProcessedDataPoint {
+  timestamp: number;
+  date: string;
+  time: string;
+  dateTime: string;
+  [key: string]: number | string; // Allow token names as keys with number values
+}
+
+interface TokenStats {
+  avg: number;
+  min: number;
+  max: number;
+}
+
+interface ChartConfig {
+  [key: string]: {
+    label: string;
+    color: string;
+  };
+}
+
+async function fetchFundingHistory(coin: string, startTime: number, endTime: number): Promise<FundingHistoryEntry[]> {
   try {
     const response = await fetch('https://api.hyperliquid.xyz/info', {
       method: 'POST',
@@ -37,7 +64,7 @@ async function fetchFundingHistory(coin: string, startTime: number, endTime: num
       throw new Error(`HTTP error! status: ${response.status}`);
     }
     
-    const data = await response.json();
+    const data: FundingHistoryEntry[] = await response.json();
     return data;
   } catch (error) {
     console.error(`Error fetching data for ${coin}:`, error);
@@ -46,12 +73,12 @@ async function fetchFundingHistory(coin: string, startTime: number, endTime: num
 }
 
 function FundingRatesChart() {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [lastUpdate, setLastUpdate] = useState(null);
-  const [timeRange, setTimeRange] = useState(7); // days
+  const [data, setData] = useState<ProcessedDataPoint[]>([]);
+  const [loading, setLoading] = useState<boolean>(false);
+  const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const [timeRange, setTimeRange] = useState<number>(7); // days
 
-  const fetchAllData = async () => {
+  const fetchAllData = async (): Promise<void> => {
     setLoading(true);
     const endTime = Date.now();
     const startTime = endTime - (timeRange * 24 * 60 * 60 * 1000); // X days ago
@@ -65,11 +92,11 @@ function FundingRatesChart() {
       const results = await Promise.all(promises);
       
       // Combine all data into a single array with timestamps
-      const combinedData = {};
+      const combinedData: Record<number, ProcessedDataPoint> = {};
       
       results.forEach((tokenData, index) => {
         const token = TOKENS[index];
-        tokenData.forEach(entry => {
+        tokenData.forEach((entry: FundingHistoryEntry) => {
           const timestamp = entry.time;
           const date = new Date(timestamp).toLocaleDateString();
           const time = new Date(timestamp).toLocaleTimeString();
@@ -88,7 +115,7 @@ function FundingRatesChart() {
       });
       
       // Convert to array and sort by timestamp
-      const chartData = Object.values(combinedData)
+      const chartData: ProcessedDataPoint[] = Object.values(combinedData)
         .sort((a, b) => a.timestamp - b.timestamp);
       
       setData(chartData);
@@ -104,14 +131,10 @@ function FundingRatesChart() {
     fetchAllData();
   }, [timeRange]);
 
-  const chartConfig = {
+  const chartConfig: ChartConfig = {
     PURR: {
       label: "PURR",
       color: COLORS.PURR,
-    },
-    FART: {
-      label: "FART", 
-      color: COLORS.FART,
     },
     SOL: {
       label: "SOL",
@@ -125,11 +148,19 @@ function FundingRatesChart() {
       label: "BTC",
       color: COLORS.BTC,
     },
+    HYPE: {
+      label: "HYPE",
+      color: COLORS.HYPE,
+    },
+    ZORA: {
+      label: "ZORA",
+      color: COLORS.ZORA,
+    },
   };
 
   // Calculate some stats
-  const getTokenStats = (token: string) => {
-    const values = data.map(d => d[token]).filter(v => v !== undefined);
+  const getTokenStats = (token: string): TokenStats => {
+    const values = data.map(d => d[token] as number).filter(v => v !== undefined && !isNaN(v));
     if (values.length === 0) return { avg: 0, min: 0, max: 0 };
     
     const avg = values.reduce((a, b) => a + b, 0) / values.length;
@@ -140,7 +171,7 @@ function FundingRatesChart() {
   };
 
   return (
-    <div className="w-full  mx-auto p-6 space-y-6">
+    <div className="w-full mx-auto p-6 space-y-6">
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
@@ -184,7 +215,7 @@ function FundingRatesChart() {
               <span className="ml-2">Loading funding data...</span>
             </div>
           ) : data.length > 0 ? (
-            <ChartContainer config={chartConfig} className="h-140">
+            <ChartContainer config={chartConfig} className="h-96">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={data}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -204,7 +235,7 @@ function FundingRatesChart() {
                             <p className="font-medium">{label}</p>
                             {payload.map((entry, index) => (
                               <p key={index} style={{ color: entry.color }}>
-                                {entry.dataKey}: {entry.value?.toFixed(4)}%
+                                {entry.dataKey}: {(entry.value as number)?.toFixed(4)}%
                               </p>
                             ))}
                           </div>
@@ -237,7 +268,7 @@ function FundingRatesChart() {
       </Card>
 
       {data.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
           {TOKENS.map(token => {
             const stats = getTokenStats(token);
             return (
@@ -256,6 +287,9 @@ function FundingRatesChart() {
                     <div>Avg: {stats.avg.toFixed(4)}%</div>
                     <div>Min: {stats.min.toFixed(4)}%</div>
                     <div>Max: {stats.max.toFixed(4)}%</div>
+                    <div className="text-xs text-gray-500 mt-1">
+                      APR: {(stats.avg * 24 * 365).toFixed(1)}%
+                    </div>
                   </div>
                 </CardContent>
               </Card>
@@ -274,6 +308,7 @@ function FundingRatesChart() {
             <p><strong>Consistency:</strong> Look for tokens with consistently higher rates vs those with high volatility.</p>
             <p><strong>Gas Costs:</strong> Factor in transaction costs when deciding whether rate differences justify switching.</p>
             <p><strong>Optimal Strategy:</strong> Consider the trade-off between higher average returns and switching frequency.</p>
+            <p><strong>APR Calculation:</strong> Hourly rate × 24 × 365 shows annualized returns for comparison.</p>
           </div>
         </CardContent>
       </Card>
