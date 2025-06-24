@@ -5,9 +5,9 @@ import FundingRatesChart from "@/components/FundingRatesChart";
 export default function Home() {
   return (
     <div >
+      <FundingComparison />
       <FundingRatesChart />
       <DriftFundingRatesChart />
-      <FundingComparison />
 
     </div>
   );
