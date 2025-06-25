@@ -349,7 +349,7 @@ function DriftFundingRatesChart() {
               <span className="ml-2">Loading funding data...</span>
             </div>
           ) : data.length > 0 ? (
-            <ChartContainer config={chartConfig} className="h-96">
+            <ChartContainer config={chartConfig} className="w-full p-10 min-h-[200px] md:min-h-[300px] lg:min-h-[300px]">
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={data}>
                   <CartesianGrid strokeDasharray="3 3" />

@@ -1,1185 +1,18 @@
-// "use client"
-// import React, { useState, useEffect } from 'react';
-// import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-// import { Button } from '@/components/ui/button';
-// import { Input } from '@/components/ui/input';
-// import { Label } from '@/components/ui/label';
-// import { Loader2, RefreshCw, TrendingUp, TrendingDown, AlertCircle, DollarSign } from 'lucide-react';
-// import { Alert, AlertDescription } from '@/components/ui/alert';
-
-// interface DriftContract {
-//   base_currency: string;
-//   base_volume: string;
-//   contract_index: number;
-//   end_timestamp: string;
-//   funding_rate: string;
-//   high: string;
-//   index_currency: string;
-//   index_name: string;
-//   index_price: string;
-//   last_price: string;
-//   low: string;
-//   next_funding_rate: string;
-//   next_funding_rate_timestamp: string;
-//   open_interest: string;
-//   product_type: string;
-//   quote_currency: string;
-//   quote_volume: string;
-//   start_timestamp: string;
-//   ticker_id: string;
-// }
-
-// interface HyperliquidAsset {
-//   name: string;
-//   szDecimals: number;
-//   maxLeverage: number;
-//   onlyIsolated?: boolean;
-// }
-
-// interface HyperliquidAssetContext {
-//   dayNtlVlm: string;
-//   funding: string;
-//   impactPxs: string[];
-//   markPx: string;
-//   midPx: string;
-//   openInterest: string;
-//   oraclePx: string;
-//   premium: string;
-//   prevDayPx: string;
-// }
-
-// interface ArbitrageOpportunity {
-//   coin: string;
-//   driftOI: number;
-//   hyperliquidOI: number;
-//   driftRate: number;
-//   hyperliquidRate: number;
-//   driftRateAPR: number;
-//   hyperliquidRateAPR: number;
-//   arbitrageSpread: number;
-//   direction: 'long-drift' | 'long-hyperliquid' | 'neutral';
-//   estimatedDailyProfit: number;
-//   estimatedAnnualProfit: number;
-//   driftMarkPrice: number;
-//   hyperliquidMarkPrice: number;
-//   priceDeviation: number;
-// }
-
-// function FundingArbitrageComparison() {
-//   const [opportunities, setOpportunities] = useState<ArbitrageOpportunity[]>([]);
-//   const [loading, setLoading] = useState(false);
-//   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
-//   const [positionSize, setPositionSize] = useState(10000);
-//   const [minSpread, setMinSpread] = useState(0.01);
-
-//   const fetchDriftContracts = async (): Promise<DriftContract[]> => {
-//     try {
-//       const response = await fetch('https://data.api.drift.trade/contracts');
-//       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-//       const data = await response.json();
-//       return data.contracts?.filter((contract: DriftContract) => 
-//         contract.product_type === 'PERP' && 
-//         contract.ticker_id && 
-//         contract.next_funding_rate !== null
-//       ) || [];
-//     } catch (error) {
-//       console.error('Error fetching Drift contracts:', error);
-//       return [];
-//     }
-//   };
-
-//   const fetchHyperliquidData = async (): Promise<{ assets: HyperliquidAsset[], contexts: HyperliquidAssetContext[] }> => {
-//     try {
-//       const response = await fetch('https://api.hyperliquid.xyz/info', {
-//         method: 'POST',
-//         headers: { 'Content-Type': 'application/json' },
-//         body: JSON.stringify({ type: 'metaAndAssetCtxs' })
-//       });
-      
-//       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-//       const data = await response.json();
-      
-//       return {
-//         assets: data[0]?.universe || [],
-//         contexts: data[1] || []
-//       };
-//     } catch (error) {
-//       console.error('Error fetching Hyperliquid data:', error);
-//       return { assets: [], contexts: [] };
-//     }
-//   };
-
-//   const calculateArbitrage = async () => {
-//     setLoading(true);
-//     try {
-//       // Fetch data from both exchanges
-//       const [driftContracts, hyperliquidData] = await Promise.all([
-//         fetchDriftContracts(),
-//         fetchHyperliquidData()
-//       ]);
-
-//       const { assets: hlAssets, contexts: hlContexts } = hyperliquidData;
-
-//       // Create a map for quick lookup
-//       const hlDataMap = new Map<string, { asset: HyperliquidAsset, context: HyperliquidAssetContext }>();
-//       hlAssets.forEach((asset, index) => {
-//         if (hlContexts[index]) {
-//           hlDataMap.set(asset.name, { asset, context: hlContexts[index] });
-//         }
-//       });
-
-//       // Find matching pairs and calculate arbitrage
-//       const arbOpportunities: ArbitrageOpportunity[] = [];
-
-//       driftContracts.forEach(driftContract => {
-//         // Extract coin symbol from Drift ticker (e.g., "BTC-PERP" -> "BTC")
-//         const coinSymbol = driftContract.ticker_id.replace('-PERP', '');
-//         const hlData = hlDataMap.get(coinSymbol);
-
-//         if (hlData) {
-//           const driftRate = parseFloat(driftContract.next_funding_rate) * 100;
-//           const hlRate = parseFloat(hlData.context.funding) * 100;
-//           const spread = Math.abs(driftRate - hlRate);
-
-//           // Only include if spread meets minimum threshold
-//           if (spread >= minSpread) {
-//             const driftMarkPrice = parseFloat(driftContract.last_price);
-//             const hlMarkPrice = parseFloat(hlData.context.markPx);
-//             const priceDeviation = Math.abs((driftMarkPrice - hlMarkPrice) / driftMarkPrice) * 100;
-
-//             // Calculate profit estimates
-//             const fundingPerDay = 3; // Funding paid 3 times per day (every 8 hours)
-//             const dailyProfit = (spread / 100) * positionSize * fundingPerDay;
-//             const annualProfit = dailyProfit * 365;
-
-//             // Determine direction
-//             let direction: 'long-drift' | 'long-hyperliquid' | 'neutral' = 'neutral';
-//             if (spread > 0.001) {
-//               direction = driftRate > hlRate ? 'long-hyperliquid' : 'long-drift';
-//             }
-
-//             arbOpportunities.push({
-//               coin: coinSymbol,
-//               driftOI: parseFloat(driftContract.open_interest),
-//               hyperliquidOI: parseFloat(hlData.context.openInterest),
-//               driftRate,
-//               hyperliquidRate: hlRate,
-//               driftRateAPR: driftRate * fundingPerDay * 365,
-//               hyperliquidRateAPR: hlRate * fundingPerDay * 365,
-//               arbitrageSpread: spread,
-//               direction,
-//               estimatedDailyProfit: dailyProfit,
-//               estimatedAnnualProfit: annualProfit,
-//               driftMarkPrice,
-//               hyperliquidMarkPrice: hlMarkPrice,
-//               priceDeviation
-//             });
-//           }
-//         }
-//       });
-
-//       // Sort by profit potential
-//       arbOpportunities.sort((a, b) => b.estimatedDailyProfit - a.estimatedDailyProfit);
-
-//       setOpportunities(arbOpportunities);
-//       setLastUpdate(new Date().toLocaleString());
-//     } catch (error) {
-//       console.error('Error calculating arbitrage:', error);
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   useEffect(() => {
-//     calculateArbitrage();
-//   }, []);
-
-//   const formatRate = (rate: number) => `${rate.toFixed(4)}%`;
-//   const formatAPR = (rate: number) => `${rate.toFixed(1)}%`;
-//   const formatMoney = (amount: number) => `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-//   const formatOI = (oi: number) => `$${(oi / 1000000).toFixed(2)}M`;
-
-//   const getSpreadColor = (spread: number) => {
-//     if (spread > 0.1) return 'text-green-600 font-bold';
-//     if (spread > 0.05) return 'text-green-500';
-//     if (spread > 0.02) return 'text-yellow-600';
-//     return 'text-gray-500';
-//   };
-
-//   const getDirectionDisplay = (direction: string) => {
-//     if (direction === 'long-drift') {
-//       return (
-//         <div className="flex items-center gap-1 text-xs">
-//           <TrendingUp className="h-3 w-3 text-green-500" />
-//           <span>Long Drift</span>
-//           <span className="text-gray-400">/</span>
-//           <TrendingDown className="h-3 w-3 text-red-500" />
-//           <span>Short HL</span>
-//         </div>
-//       );
-//     }
-//     if (direction === 'long-hyperliquid') {
-//       return (
-//         <div className="flex items-center gap-1 text-xs">
-//           <TrendingUp className="h-3 w-3 text-green-500" />
-//           <span>Long HL</span>
-//           <span className="text-gray-400">/</span>
-//           <TrendingDown className="h-3 w-3 text-red-500" />
-//           <span>Short Drift</span>
-//         </div>
-//       );
-//     }
-//     return <span className="text-xs text-gray-400">No Arb</span>;
-//   };
-
-//   return (
-//     <div className="w-full mx-auto p-6 space-y-6">
-//       {/* Controls */}
-//       <Card>
-//         <CardHeader>
-//           <CardTitle className="flex items-center justify-between">
-//             <span className="flex items-center gap-2">
-//               <DollarSign className="h-5 w-5" />
-//               Funding Rate Arbitrage Scanner
-//             </span>
-//             <Button 
-//               onClick={calculateArbitrage} 
-//               disabled={loading}
-//               size="sm"
-//               variant="outline"
-//             >
-//               {loading ? (
-//                 <Loader2 className="h-4 w-4 animate-spin" />
-//               ) : (
-//                 <RefreshCw className="h-4 w-4" />
-//               )}
-//             </Button>
-//           </CardTitle>
-//           <CardDescription>
-//             Live funding rate arbitrage opportunities between Drift and Hyperliquid
-//             {lastUpdate && <span className="ml-2 text-xs">• Last updated: {lastUpdate}</span>}
-//           </CardDescription>
-//         </CardHeader>
-//         <CardContent>
-//           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-//             <div>
-//               <Label htmlFor="position-size">Position Size (USD)</Label>
-//               <Input
-//                 id="position-size"
-//                 type="number"
-//                 value={positionSize}
-//                 onChange={(e) => setPositionSize(Number(e.target.value))}
-//                 placeholder="10000"
-//               />
-//             </div>
-//             <div>
-//               <Label htmlFor="min-spread">Min Spread (%)</Label>
-//               <Input
-//                 id="min-spread"
-//                 type="number"
-//                 step="0.01"
-//                 value={minSpread}
-//                 onChange={(e) => setMinSpread(Number(e.target.value))}
-//                 placeholder="0.01"
-//               />
-//             </div>
-//             <div className="flex items-end">
-//               <Button onClick={calculateArbitrage} className="w-full">
-//                 Recalculate
-//               </Button>
-//             </div>
-//           </div>
-//         </CardContent>
-//       </Card>
-
-//       {/* Results Table */}
-//       <Card>
-//         <CardContent className="p-0">
-//           {loading ? (
-//             <div className="flex items-center justify-center h-64">
-//               <Loader2 className="h-8 w-8 animate-spin" />
-//               <span className="ml-2">Scanning for arbitrage opportunities...</span>
-//             </div>
-//           ) : opportunities.length === 0 ? (
-//             <div className="flex items-center justify-center h-64">
-//               <AlertCircle className="h-8 w-8 text-gray-400" />
-//               <span className="ml-2 text-gray-500">No arbitrage opportunities found above {minSpread}% spread</span>
-//             </div>
-//           ) : (
-//             <div className="overflow-x-auto">
-//               <table className="w-full text-sm">
-//                 <thead className="bg-gray-50">
-//                   <tr>
-//                     <th className="text-left py-3 px-4 font-medium">Asset</th>
-//                     <th className="text-left py-3 px-4 font-medium">Drift Rate</th>
-//                     <th className="text-left py-3 px-4 font-medium">HL Rate</th>
-//                     <th className="text-left py-3 px-4 font-medium">Spread</th>
-//                     <th className="text-left py-3 px-4 font-medium">Strategy</th>
-//                     <th className="text-left py-3 px-4 font-medium">Daily Profit</th>
-//                     <th className="text-left py-3 px-4 font-medium">APR</th>
-//                     <th className="text-left py-3 px-4 font-medium">Open Interest</th>
-//                     <th className="text-left py-3 px-4 font-medium">Price Dev</th>
-//                   </tr>
-//                 </thead>
-//                 <tbody>
-//                   {opportunities.map((opp) => (
-//                     <tr key={opp.coin} className="border-b hover:bg-gray-50 transition-colors">
-//                       <td className="py-3 px-4 font-medium">{opp.coin}</td>
-//                       <td className={`py-3 px-4 ${opp.driftRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-//                         {formatRate(opp.driftRate)}
-//                       </td>
-//                       <td className={`py-3 px-4 ${opp.hyperliquidRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-//                         {formatRate(opp.hyperliquidRate)}
-//                       </td>
-//                       <td className={`py-3 px-4 ${getSpreadColor(opp.arbitrageSpread)}`}>
-//                         {formatRate(opp.arbitrageSpread)}
-//                       </td>
-//                       <td className="py-3 px-4">{getDirectionDisplay(opp.direction)}</td>
-//                       <td className="py-3 px-4 font-medium text-green-600">
-//                         {formatMoney(opp.estimatedDailyProfit)}
-//                       </td>
-//                       <td className="py-3 px-4 text-sm">
-//                         {formatAPR((opp.estimatedAnnualProfit / positionSize) * 100)}
-//                       </td>
-//                       <td className="py-3 px-4">
-//                         <div className="text-xs">
-//                           <div>D: {formatOI(opp.driftOI)}</div>
-//                           <div>H: {formatOI(opp.hyperliquidOI)}</div>
-//                         </div>
-//                       </td>
-//                       <td className={`py-3 px-4 text-xs ${opp.priceDeviation > 0.5 ? 'text-red-500' : 'text-gray-500'}`}>
-//                         {opp.priceDeviation.toFixed(2)}%
-//                       </td>
-//                     </tr>
-//                   ))}
-//                 </tbody>
-//               </table>
-//             </div>
-//           )}
-//         </CardContent>
-//       </Card>
-
-//       {/* Summary Stats */}
-//       {opportunities.length > 0 && (
-//         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-//           <Card>
-//             <CardHeader className="pb-3">
-//               <CardTitle className="text-sm font-medium">Top Opportunity</CardTitle>
-//             </CardHeader>
-//             <CardContent>
-//               <div className="text-2xl font-bold">{opportunities[0].coin}</div>
-//               <p className="text-xs text-gray-500">
-//                 {formatMoney(opportunities[0].estimatedDailyProfit)} daily profit
-//               </p>
-//             </CardContent>
-//           </Card>
-
-//           <Card>
-//             <CardHeader className="pb-3">
-//               <CardTitle className="text-sm font-medium">Total Daily Profit</CardTitle>
-//             </CardHeader>
-//             <CardContent>
-//               <div className="text-2xl font-bold">
-//                 {formatMoney(opportunities.reduce((sum, opp) => sum + opp.estimatedDailyProfit, 0))}
-//               </div>
-//               <p className="text-xs text-gray-500">
-//                 Across {opportunities.length} opportunities
-//               </p>
-//             </CardContent>
-//           </Card>
-
-//           <Card>
-//             <CardHeader className="pb-3">
-//               <CardTitle className="text-sm font-medium">Average APR</CardTitle>
-//             </CardHeader>
-//             <CardContent>
-//               <div className="text-2xl font-bold">
-//                 {formatAPR(
-//                   (opportunities.reduce((sum, opp) => sum + opp.estimatedAnnualProfit, 0) / 
-//                   (opportunities.length * positionSize)) * 100
-//                 )}
-//               </div>
-//               <p className="text-xs text-gray-500">
-//                 Market neutral returns
-//               </p>
-//             </CardContent>
-//           </Card>
-//         </div>
-//       )}
-
-//       {/* Strategy Guide */}
-//       <Alert>
-//         <AlertCircle className="h-4 w-4" />
-//         <AlertDescription>
-//           <strong>Basis Trading Strategy:</strong> This scanner identifies funding rate disparities between exchanges. 
-//           When you &quot;Long Drift / Short HL&quot;, you&apos;re earning the spread between the two funding rates every 8 hours. 
-//           Consider transaction costs (~0.05% per trade), slippage, and maintain balanced positions to remain market neutral.
-//         </AlertDescription>
-//       </Alert>
-//     </div>
-//   );
-// }
-
-// export default FundingArbitrageComparison;
-
-
-// "use client"
-// // Funding Rate Arbitrage Scanner
-// // Compares two strategies:
-// // 1. Cross-exchange arbitrage: Long low-funding exchange, short high-funding exchange
-// // 2. Spot + Perp: Buy spot, then long/short perp based on funding direction
-// //    - Positive funding: shorts receive (buy spot + short perp)
-// //    - Negative funding: longs receive (buy spot + long perp)
-// // For Drift positions, assumes spot is available via Solana DEXs
-
-// import React, { useState, useEffect } from 'react';
-// import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-// import { Button } from '@/components/ui/button';
-// import { Input } from '@/components/ui/input';
-// import { Label } from '@/components/ui/label';
-// import { Loader2, RefreshCw, TrendingUp, TrendingDown, AlertCircle, DollarSign, Info, Coins } from 'lucide-react';
-// import { Alert, AlertDescription } from '@/components/ui/alert';
-// import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-// import { Badge } from '@/components/ui/badge';
-
-// interface DriftContract {
-//   base_currency: string;
-//   base_volume: string;
-//   contract_index: number;
-//   end_timestamp: string;
-//   funding_rate: string;
-//   high: string;
-//   index_currency: string;
-//   index_name: string;
-//   index_price: string;
-//   last_price: string;
-//   low: string;
-//   next_funding_rate: string;
-//   next_funding_rate_timestamp: string;
-//   open_interest: string;
-//   product_type: string;
-//   quote_currency: string;
-//   quote_volume: string;
-//   start_timestamp: string;
-//   ticker_id: string;
-// }
-
-// interface HyperliquidAsset {
-//   name: string;
-//   szDecimals: number;
-//   maxLeverage: number;
-//   onlyIsolated?: boolean;
-// }
-
-// interface HyperliquidAssetContext {
-//   dayNtlVlm: string;
-//   funding: string;
-//   impactPxs: string[];
-//   markPx: string;
-//   midPx: string;
-//   openInterest: string;
-//   oraclePx: string;
-//   premium: string;
-//   prevDayPx: string;
-// }
-
-// interface HyperliquidSpotToken {
-//   name: string;
-//   szDecimals: number;
-//   weiDecimals: number;
-//   index: number;
-//   tokenId: string;
-//   isCanonical: boolean;
-//   evmContract: string | null;
-//   fullName: string | null;
-// }
-
-// interface HyperliquidSpotPair {
-//   name: string;
-//   tokens: number[];
-//   index: number;
-//   isCanonical: boolean;
-// }
-
-// interface HyperliquidSpotContext {
-//   dayNtlVlm: string;
-//   markPx: string;
-//   midPx: string;
-//   prevDayPx: string;
-// }
-
-// interface ArbitrageOpportunity {
-//   coin: string;
-//   // Cross-exchange arbitrage data
-//   driftOI: number;
-//   hyperliquidOI: number;
-//   driftRate: number;
-//   hyperliquidRate: number;
-//   driftRateAPR: number;
-//   hyperliquidRateAPR: number;
-//   arbitrageSpread: number;
-//   crossExchangeDirection: 'long-drift' | 'long-hyperliquid' | 'neutral';
-//   crossExchangeDailyProfit: number;
-//   crossExchangeAnnualProfit: number;
-//   // Spot + Perp data
-//   hasSpotMarket: boolean;
-//   spotPrice?: number;
-//   spotPerpDailyProfit?: number;
-//   spotPerpAnnualProfit?: number;
-//   spotPerpExchange?: 'drift' | 'hyperliquid';
-//   spotPerpDirection?: 'long' | 'short';
-//   // Best strategy
-//   bestStrategy: 'cross-exchange' | 'spot-perp' | 'none';
-//   bestStrategyDailyProfit: number;
-//   bestStrategyAPR: number;
-//   // Price data
-//   driftMarkPrice: number;
-//   hyperliquidMarkPrice: number;
-//   priceDeviation: number;
-// }
-
-// function FundingArbitrageComparison() {
-//   const [opportunities, setOpportunities] = useState<ArbitrageOpportunity[]>([]);
-//   const [loading, setLoading] = useState(false);
-//   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
-//   const [positionSize, setPositionSize] = useState(10000);
-//   const [minSpread, setMinSpread] = useState(0.01);
-//   const [minAbsoluteRate, setMinAbsoluteRate] = useState(0.05);
-
-//   const fetchDriftContracts = async (): Promise<DriftContract[]> => {
-//     try {
-//       const response = await fetch('https://data.api.drift.trade/contracts');
-//       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-//       const data = await response.json();
-//       return data.contracts?.filter((contract: DriftContract) => 
-//         contract.product_type === 'PERP' && 
-//         contract.ticker_id && 
-//         contract.next_funding_rate !== null
-//       ) || [];
-//     } catch (error) {
-//       console.error('Error fetching Drift contracts:', error);
-//       return [];
-//     }
-//   };
-
-//   const fetchHyperliquidData = async (): Promise<{ assets: HyperliquidAsset[], contexts: HyperliquidAssetContext[] }> => {
-//     try {
-//       const response = await fetch('https://api.hyperliquid.xyz/info', {
-//         method: 'POST',
-//         headers: { 'Content-Type': 'application/json' },
-//         body: JSON.stringify({ type: 'metaAndAssetCtxs' })
-//       });
-      
-//       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-//       const data = await response.json();
-      
-//       return {
-//         assets: data[0]?.universe || [],
-//         contexts: data[1] || []
-//       };
-//     } catch (error) {
-//       console.error('Error fetching Hyperliquid data:', error);
-//       return { assets: [], contexts: [] };
-//     }
-//   };
-
-//   const fetchHyperliquidSpotData = async (): Promise<{ 
-//     tokens: HyperliquidSpotToken[], 
-//     pairs: HyperliquidSpotPair[], 
-//     contexts: HyperliquidSpotContext[] 
-//   }> => {
-//     try {
-//       const response = await fetch('https://api.hyperliquid.xyz/info', {
-//         method: 'POST',
-//         headers: { 'Content-Type': 'application/json' },
-//         body: JSON.stringify({ type: 'spotMetaAndAssetCtxs' })
-//       });
-      
-//       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-//       const data = await response.json();
-      
-//       return {
-//         tokens: data[0]?.tokens || [],
-//         pairs: data[0]?.universe || [],
-//         contexts: data[1] || []
-//       };
-//     } catch (error) {
-//       console.error('Error fetching Hyperliquid spot data:', error);
-//       return { tokens: [], pairs: [], contexts: [] };
-//     }
-//   };
-
-//   const calculateArbitrage = async () => {
-//     setLoading(true);
-//     try {
-//       // Fetch data from both exchanges
-//       const [driftContracts, hyperliquidData, hyperliquidSpotData] = await Promise.all([
-//         fetchDriftContracts(),
-//         fetchHyperliquidData(),
-//         fetchHyperliquidSpotData()
-//       ]);
-
-//       const { assets: hlAssets, contexts: hlContexts } = hyperliquidData;
-//       const { tokens: spotTokens, pairs: spotPairs, contexts: spotContexts } = hyperliquidSpotData;
-
-//       // Create maps for quick lookup
-//       const hlDataMap = new Map<string, { asset: HyperliquidAsset, context: HyperliquidAssetContext }>();
-//       hlAssets.forEach((asset, index) => {
-//         if (hlContexts[index]) {
-//           hlDataMap.set(asset.name, { asset, context: hlContexts[index] });
-//         }
-//       });
-
-//       // Create spot market map
-//       const spotMarketMap = new Map<string, { pair: HyperliquidSpotPair, context: HyperliquidSpotContext }>();
-//       spotPairs.forEach((pair, index) => {
-//         if (spotContexts[index] && pair.name.endsWith('/USDC')) {
-//           const tokenName = pair.name.replace('/USDC', '');
-//           spotMarketMap.set(tokenName, { pair, context: spotContexts[index] });
-//         }
-//       });
-
-//       // Find matching pairs and calculate arbitrage
-//       const arbOpportunities: ArbitrageOpportunity[] = [];
-
-//       driftContracts.forEach(driftContract => {
-//         // Extract coin symbol from Drift ticker (e.g., "BTC-PERP" -> "BTC")
-//         const coinSymbol = driftContract.ticker_id.replace('-PERP', '');
-//         const hlData = hlDataMap.get(coinSymbol);
-
-//         if (hlData) {
-//           const driftRate = parseFloat(driftContract.next_funding_rate) * 100;
-//           const hlRate = parseFloat(hlData.context.funding) * 100;
-//           const spread = Math.abs(driftRate - hlRate);
-//           const driftMarkPrice = parseFloat(driftContract.last_price);
-//           const hlMarkPrice = parseFloat(hlData.context.markPx);
-//           const priceDeviation = Math.abs((driftMarkPrice - hlMarkPrice) / driftMarkPrice) * 100;
-
-//           // Check for spot market
-//           const spotMarket = spotMarketMap.get(coinSymbol);
-//           const hasSpotMarket = !!spotMarket;
-//           const spotPrice = spotMarket ? parseFloat(spotMarket.context.markPx) : undefined;
-
-//           // Calculate profits for both strategies
-//           const fundingPerDay = 3; // Funding paid 3 times per day (every 8 hours)
-          
-//           // Cross-exchange arbitrage
-//           const crossExchangeDailyProfit = (spread / 100) * positionSize * fundingPerDay;
-//           const crossExchangeAnnualProfit = crossExchangeDailyProfit * 365;
-
-//           // Spot + Perp strategy
-//           // We can always do spot+perp on Drift (using Solana DEX for spot)
-//           // We can do spot+perp on HL only if HL has spot market
-//           let spotPerpDailyProfit = 0;
-//           let spotPerpAnnualProfit = 0;
-//           let spotPerpExchange: 'drift' | 'hyperliquid' | undefined;
-//           let spotPerpDirection: 'long' | 'short' | undefined;
-          
-//           // Always consider Drift spot+perp (spot via Solana DEX)
-//           if (Math.abs(driftRate) >= minAbsoluteRate) {
-//             spotPerpDailyProfit = Math.abs(driftRate) / 100 * positionSize * fundingPerDay;
-//             spotPerpAnnualProfit = spotPerpDailyProfit * 365;
-//             spotPerpExchange = 'drift';
-//             // If rate is positive, shorts receive funding. If negative, longs receive.
-//             spotPerpDirection = driftRate > 0 ? 'short' : 'long';
-//           }
-          
-//           // Consider HL spot+perp only if HL has spot market
-//           if (hasSpotMarket && Math.abs(hlRate) >= minAbsoluteRate) {
-//             const hlProfit = Math.abs(hlRate) / 100 * positionSize * fundingPerDay;
-//             if (hlProfit > spotPerpDailyProfit) {
-//               spotPerpDailyProfit = hlProfit;
-//               spotPerpAnnualProfit = hlProfit * 365;
-//               spotPerpExchange = 'hyperliquid';
-//               spotPerpDirection = hlRate > 0 ? 'short' : 'long';
-//             }
-//           }
-
-//           // Determine best strategy
-//           let bestStrategy: 'cross-exchange' | 'spot-perp' | 'none' = 'none';
-//           let bestStrategyDailyProfit = 0;
-          
-//           if (spread >= minSpread && crossExchangeDailyProfit > spotPerpDailyProfit) {
-//             bestStrategy = 'cross-exchange';
-//             bestStrategyDailyProfit = crossExchangeDailyProfit;
-//           } else if (spotPerpDailyProfit > 0 && spotPerpDailyProfit > crossExchangeDailyProfit) {
-//             bestStrategy = 'spot-perp';
-//             bestStrategyDailyProfit = spotPerpDailyProfit;
-//           } else if (spread >= minSpread) {
-//             bestStrategy = 'cross-exchange';
-//             bestStrategyDailyProfit = crossExchangeDailyProfit;
-//           }
-
-//           // Only include if there's a profitable strategy
-//           if (bestStrategy !== 'none') {
-//             // Determine cross-exchange direction
-//             let crossExchangeDirection: 'long-drift' | 'long-hyperliquid' | 'neutral' = 'neutral';
-//             if (spread > 0.001) {
-//               crossExchangeDirection = driftRate > hlRate ? 'long-hyperliquid' : 'long-drift';
-//             }
-
-//             const bestStrategyAPR = bestStrategy === 'cross-exchange' 
-//               ? (crossExchangeAnnualProfit / positionSize) * 100
-//               : (spotPerpAnnualProfit / positionSize) * 100;
-
-//             arbOpportunities.push({
-//               coin: coinSymbol,
-//               driftOI: parseFloat(driftContract.open_interest),
-//               hyperliquidOI: parseFloat(hlData.context.openInterest),
-//               driftRate,
-//               hyperliquidRate: hlRate,
-//               driftRateAPR: driftRate * fundingPerDay * 365,
-//               hyperliquidRateAPR: hlRate * fundingPerDay * 365,
-//               arbitrageSpread: spread,
-//               crossExchangeDirection,
-//               crossExchangeDailyProfit,
-//               crossExchangeAnnualProfit,
-//               hasSpotMarket,
-//               spotPrice,
-//               spotPerpDailyProfit,
-//               spotPerpAnnualProfit,
-//               spotPerpExchange,
-//               spotPerpDirection,
-//               bestStrategy,
-//               bestStrategyDailyProfit,
-//               bestStrategyAPR,
-//               driftMarkPrice,
-//               hyperliquidMarkPrice: hlMarkPrice,
-//               priceDeviation
-//             });
-//           }
-//         }
-//       });
-
-//       // Sort by best strategy profit potential
-//       arbOpportunities.sort((a, b) => b.bestStrategyDailyProfit - a.bestStrategyDailyProfit);
-
-//       setOpportunities(arbOpportunities);
-//       setLastUpdate(new Date().toLocaleString());
-//     } catch (error) {
-//       console.error('Error calculating arbitrage:', error);
-//     } finally {
-//       setLoading(false);
-//     }
-//   };
-
-//   useEffect(() => {
-//     calculateArbitrage();
-//   }, []);
-
-//   const formatRate = (rate: number) => `${rate.toFixed(4)}%`;
-//   const formatAPR = (rate: number) => `${rate.toFixed(1)}%`;
-//   const formatMoney = (amount: number) => `$${amount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-//   const formatOI = (oi: number) => `$${(oi / 1000000).toFixed(2)}M`;
-
-//   const getSpreadColor = (spread: number) => {
-//     if (spread > 0.1) return 'text-green-600 font-bold';
-//     if (spread > 0.05) return 'text-green-500';
-//     if (spread > 0.02) return 'text-yellow-600';
-//     return 'text-gray-500';
-//   };
-
-//   const getStrategyDisplay = (opp: ArbitrageOpportunity) => {
-//     if (opp.bestStrategy === 'cross-exchange') {
-//       if (opp.crossExchangeDirection === 'long-drift') {
-//         return (
-//           <Tooltip>
-//             <TooltipTrigger>
-//               <div className="flex items-center gap-1 text-xs">
-//                 <TrendingUp className="h-3 w-3 text-green-500" />
-//                 <span>Long Drift</span>
-//                 <span className="text-gray-400">/</span>
-//                 <TrendingDown className="h-3 w-3 text-red-500" />
-//                 <span>Short HL</span>
-//               </div>
-//             </TooltipTrigger>
-//             <TooltipContent>
-//               <p>Cross-exchange arbitrage: Long on Drift (lower funding) and Short on Hyperliquid (higher funding) to earn the spread</p>
-//             </TooltipContent>
-//           </Tooltip>
-//         );
-//       }
-//       return (
-//         <Tooltip>
-//           <TooltipTrigger>
-//             <div className="flex items-center gap-1 text-xs">
-//               <TrendingUp className="h-3 w-3 text-green-500" />
-//               <span>Long HL</span>
-//               <span className="text-gray-400">/</span>
-//               <TrendingDown className="h-3 w-3 text-red-500" />
-//               <span>Short Drift</span>
-//             </div>
-//           </TooltipTrigger>
-//           <TooltipContent>
-//             <p>Cross-exchange arbitrage: Long on Hyperliquid (lower funding) and Short on Drift (higher funding) to earn the spread</p>
-//           </TooltipContent>
-//         </Tooltip>
-//       );
-//     } else if (opp.bestStrategy === 'spot-perp') {
-//       const exchange = opp.spotPerpExchange === 'hyperliquid' ? 'HL' : 'Drift';
-//       const rate = opp.spotPerpExchange === 'hyperliquid' ? opp.hyperliquidRate : opp.driftRate;
-//       const isLong = opp.spotPerpDirection === 'long';
-//       const spotLocation = opp.spotPerpExchange === 'hyperliquid' ? 'HL' : 'Solana DEX';
-      
-//       return (
-//         <Tooltip>
-//           <TooltipTrigger>
-//             <div className="flex items-center gap-1 text-xs">
-//               <Coins className="h-3 w-3 text-blue-500" />
-//               <span>Spot + {isLong ? 'Long' : 'Short'} {exchange}</span>
-//               <Badge variant="outline" className="ml-1 text-xs h-4 px-1">
-//                 {isLong ? 'Longs receive' : 'Shorts receive'}
-//               </Badge>
-//             </div>
-//           </TooltipTrigger>
-//           <TooltipContent className="max-w-xs">
-//             <p>Buy spot on {spotLocation} and {isLong ? 'long' : 'short'} perp on {opp.spotPerpExchange === 'hyperliquid' ? 'Hyperliquid' : 'Drift'}. 
-//             {rate > 0 ? ' Shorts receive funding payments.' : ' Longs receive funding payments (negative funding).'}
-//             This captures the full {Math.abs(rate).toFixed(3)}% funding rate.</p>
-//           </TooltipContent>
-//         </Tooltip>
-//       );
-//     }
-//     return <span className="text-xs text-gray-400">No Arb</span>;
-//   };
-
-//   return (
-//     <TooltipProvider>
-//       <div className="w-full mx-auto p-6 space-y-6">
-//         {/* Controls */}
-//         <Card>
-//           <CardHeader>
-//             <CardTitle className="flex items-center justify-between">
-//               <span className="flex items-center gap-2">
-//                 <DollarSign className="h-5 w-5" />
-//                 Funding Rate Arbitrage Scanner
-//               </span>
-//               <Button 
-//                 onClick={calculateArbitrage} 
-//                 disabled={loading}
-//                 size="sm"
-//                 variant="outline"
-//               >
-//                 {loading ? (
-//                   <Loader2 className="h-4 w-4 animate-spin" />
-//                 ) : (
-//                   <RefreshCw className="h-4 w-4" />
-//                 )}
-//               </Button>
-//             </CardTitle>
-//             <CardDescription>
-//               Compares cross-exchange arbitrage vs spot+short strategies to find the best opportunities
-//               {lastUpdate && <span className="ml-2 text-xs">• Last updated: {lastUpdate}</span>}
-//             </CardDescription>
-//           </CardHeader>
-//           <CardContent>
-//             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-//               <div>
-//                 <Label htmlFor="position-size">Position Size (USD)</Label>
-//                 <Input
-//                   id="position-size"
-//                   type="number"
-//                   value={positionSize}
-//                   onChange={(e) => setPositionSize(Number(e.target.value))}
-//                   placeholder="10000"
-//                 />
-//               </div>
-//               <div>
-//                 <Label htmlFor="min-spread">
-//                   Min Spread (%)
-//                   <Tooltip>
-//                     <TooltipTrigger asChild>
-//                       <Info className="inline h-3 w-3 ml-1 text-gray-400" />
-//                     </TooltipTrigger>
-//                     <TooltipContent>
-//                       <p>Minimum funding rate difference for cross-exchange arbitrage</p>
-//                     </TooltipContent>
-//                   </Tooltip>
-//                 </Label>
-//                 <Input
-//                   id="min-spread"
-//                   type="number"
-//                   step="0.01"
-//                   value={minSpread}
-//                   onChange={(e) => setMinSpread(Number(e.target.value))}
-//                   placeholder="0.01"
-//                 />
-//               </div>
-//               <div>
-//                 <Label htmlFor="min-absolute">
-//                   Min Absolute Rate (%)
-//                   <Tooltip>
-//                     <TooltipTrigger asChild>
-//                       <Info className="inline h-3 w-3 ml-1 text-gray-400" />
-//                     </TooltipTrigger>
-//                     <TooltipContent>
-//                       <p>Minimum absolute funding rate for spot+perp strategy (works for both positive and negative rates)</p>
-//                     </TooltipContent>
-//                   </Tooltip>
-//                 </Label>
-//                 <Input
-//                   id="min-absolute"
-//                   type="number"
-//                   step="0.01"
-//                   value={minAbsoluteRate}
-//                   onChange={(e) => setMinAbsoluteRate(Number(e.target.value))}
-//                   placeholder="0.05"
-//                 />
-//               </div>
-//               <div className="flex items-end">
-//                 <Button onClick={calculateArbitrage} className="w-full">
-//                   Recalculate
-//                 </Button>
-//               </div>
-//             </div>
-//           </CardContent>
-//         </Card>
-
-//         {/* Results Table */}
-//         <Card>
-//           <CardContent className="p-0">
-//             {loading ? (
-//               <div className="flex items-center justify-center h-64">
-//                 <Loader2 className="h-8 w-8 animate-spin" />
-//                 <span className="ml-2">Scanning for arbitrage opportunities...</span>
-//               </div>
-//             ) : opportunities.length === 0 ? (
-//               <div className="flex items-center justify-center h-64">
-//                 <AlertCircle className="h-8 w-8 text-gray-400" />
-//                 <span className="ml-2 text-gray-500">No profitable opportunities found with current filters</span>
-//               </div>
-//             ) : (
-//               <div className="overflow-x-auto">
-//                 <table className="w-full text-sm">
-//                   <thead className="bg-gray-50">
-//                     <tr>
-//                       <th className="text-left py-3 px-4 font-medium">Asset</th>
-//                       <th className="text-left py-3 px-4 font-medium">Drift Rate</th>
-//                       <th className="text-left py-3 px-4 font-medium">HL Rate</th>
-//                       <th className="text-left py-3 px-4 font-medium">Spread</th>
-//                       <th className="text-left py-3 px-4 font-medium">
-//                         Best Strategy
-//                         <Tooltip>
-//                           <TooltipTrigger asChild>
-//                             <Info className="inline h-3 w-3 ml-1 text-gray-400" />
-//                           </TooltipTrigger>
-//                           <TooltipContent className="max-w-xs">
-//                             <p>Automatically selects the most profitable strategy: cross-exchange arbitrage or spot+perp (long/short based on funding direction)</p>
-//                           </TooltipContent>
-//                         </Tooltip>
-//                       </th>
-//                       <th className="text-left py-3 px-4 font-medium">Daily Profit</th>
-//                       <th className="text-left py-3 px-4 font-medium">APR</th>
-//                       <th className="text-left py-3 px-4 font-medium">
-//                         Spot
-//                         <Tooltip>
-//                           <TooltipTrigger asChild>
-//                             <Info className="inline h-3 w-3 ml-1 text-gray-400" />
-//                           </TooltipTrigger>
-//                           <TooltipContent>
-//                             <p>Shows if spot market exists on Hyperliquid. For Drift strategies, we assume spot is available via Solana DEXs.</p>
-//                           </TooltipContent>
-//                         </Tooltip>
-//                       </th>
-//                       <th className="text-left py-3 px-4 font-medium">Open Interest</th>
-//                       <th className="text-left py-3 px-4 font-medium">Price Dev</th>
-//                     </tr>
-//                   </thead>
-//                   <tbody>
-//                     {opportunities.map((opp) => (
-//                       <tr key={opp.coin} className="border-b hover:bg-gray-50 transition-colors">
-//                         <td className="py-3 px-4 font-medium">{opp.coin}</td>
-//                         <td className={`py-3 px-4 ${opp.driftRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-//                           {formatRate(opp.driftRate)}
-//                           {opp.driftRate < 0 && (
-//                             <span className="ml-1 text-xs text-gray-500">(longs receive)</span>
-//                           )}
-//                         </td>
-//                         <td className={`py-3 px-4 ${opp.hyperliquidRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-//                           {formatRate(opp.hyperliquidRate)}
-//                           {opp.hyperliquidRate < 0 && (
-//                             <span className="ml-1 text-xs text-gray-500">(longs receive)</span>
-//                           )}
-//                         </td>
-//                         <td className={`py-3 px-4 ${getSpreadColor(opp.arbitrageSpread)}`}>
-//                           {formatRate(opp.arbitrageSpread)}
-//                         </td>
-//                         <td className="py-3 px-4">{getStrategyDisplay(opp)}</td>
-//                         <td className="py-3 px-4 font-medium text-green-600">
-//                           <Tooltip>
-//                             <TooltipTrigger>
-//                               <span>{formatMoney(opp.bestStrategyDailyProfit)}</span>
-//                             </TooltipTrigger>
-//                             <TooltipContent>
-//                               {opp.bestStrategy === 'cross-exchange' 
-//                                 ? `Earning ${opp.arbitrageSpread.toFixed(3)}% spread × 3 times daily`
-//                                 : `Earning ${Math.abs(opp.spotPerpExchange === 'drift' ? opp.driftRate : opp.hyperliquidRate).toFixed(3)}% × 3 times daily`
-//                               }
-//                             </TooltipContent>
-//                           </Tooltip>
-//                         </td>
-//                         <td className="py-3 px-4 text-sm">
-//                           {formatAPR(opp.bestStrategyAPR)}
-//                         </td>
-//                         <td className="py-3 px-4">
-//                           {opp.hasSpotMarket ? (
-//                             <Badge variant="secondary" className="text-xs">
-//                               <Coins className="h-3 w-3 mr-1" />
-//                               HL
-//                             </Badge>
-//                           ) : (
-//                             <Badge variant="outline" className="text-xs text-gray-400">
-//                               DEX only
-//                             </Badge>
-//                           )}
-//                         </td>
-//                         <td className="py-3 px-4">
-//                           <div className="text-xs">
-//                             <div>D: {formatOI(opp.driftOI)}</div>
-//                             <div>H: {formatOI(opp.hyperliquidOI)}</div>
-//                           </div>
-//                         </td>
-//                         <td className={`py-3 px-4 text-xs ${opp.priceDeviation > 0.5 ? 'text-red-500' : 'text-gray-500'}`}>
-//                           {opp.priceDeviation.toFixed(2)}%
-//                         </td>
-//                       </tr>
-//                     ))}
-//                   </tbody>
-//                 </table>
-//               </div>
-//             )}
-//           </CardContent>
-//         </Card>
-
-//         {/* Summary Stats */}
-//         {opportunities.length > 0 && (
-//           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-//             <Card>
-//               <CardHeader className="pb-3">
-//                 <CardTitle className="text-sm font-medium">Top Opportunity</CardTitle>
-//               </CardHeader>
-//               <CardContent>
-//                 <div className="text-2xl font-bold">{opportunities[0].coin}</div>
-//                 <p className="text-xs text-gray-500">
-//                   {formatMoney(opportunities[0].bestStrategyDailyProfit)} daily
-//                 </p>
-//                 <Badge variant="secondary" className="mt-1 text-xs">
-//                   {opportunities[0].bestStrategy === 'cross-exchange' ? 'Cross-Exchange' : 'Spot+Perp'}
-//                 </Badge>
-//               </CardContent>
-//             </Card>
-
-//             <Card>
-//               <CardHeader className="pb-3">
-//                 <CardTitle className="text-sm font-medium">Total Daily Profit</CardTitle>
-//               </CardHeader>
-//               <CardContent>
-//                 <div className="text-2xl font-bold">
-//                   {formatMoney(opportunities.reduce((sum, opp) => sum + opp.bestStrategyDailyProfit, 0))}
-//                 </div>
-//                 <p className="text-xs text-gray-500">
-//                   Across {opportunities.length} opportunities
-//                 </p>
-//               </CardContent>
-//             </Card>
-
-//             <Card>
-//               <CardHeader className="pb-3">
-//                 <CardTitle className="text-sm font-medium">Average APR</CardTitle>
-//               </CardHeader>
-//               <CardContent>
-//                 <div className="text-2xl font-bold">
-//                   {formatAPR(
-//                     opportunities.reduce((sum, opp) => sum + opp.bestStrategyAPR, 0) / opportunities.length
-//                   )}
-//                 </div>
-//                 <p className="text-xs text-gray-500">
-//                   Market neutral returns
-//                 </p>
-//               </CardContent>
-//             </Card>
-
-//             <Card>
-//               <CardHeader className="pb-3">
-//                 <CardTitle className="text-sm font-medium">Strategy Mix</CardTitle>
-//               </CardHeader>
-//               <CardContent>
-//                 <div className="space-y-1">
-//                   <div className="text-xs">
-//                     Cross-Exchange: {opportunities.filter(o => o.bestStrategy === 'cross-exchange').length}
-//                   </div>
-//                   <div className="text-xs">
-//                     Spot+Perp: {opportunities.filter(o => o.bestStrategy === 'spot-perp').length}
-//                   </div>
-//                 </div>
-//               </CardContent>
-//             </Card>
-//           </div>
-//         )}
-
-//         {/* Strategy Guide */}
-//         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-//           <Alert>
-//             <TrendingUp className="h-4 w-4" />
-//             <AlertDescription>
-//               <strong>Cross-Exchange Arbitrage:</strong> Long the exchange with lower funding rate and short the one with higher funding rate. 
-//               You earn the spread between the two rates every 8 hours while remaining market neutral. 
-//               Best when there&apos;s a significant rate difference between exchanges.
-//             </AlertDescription>
-//           </Alert>
-          
-//           <Alert>
-//             <Coins className="h-4 w-4" />
-//             <AlertDescription>
-//               <strong>Spot + Perp Strategy:</strong> Buy spot and either long or short the perpetual based on funding direction. 
-//               When funding is positive, shorts receive payments. When negative, longs receive payments. 
-//               This captures the full funding rate. For Drift positions, spot is purchased on Solana DEXs like Jupiter.
-//             </AlertDescription>
-//           </Alert>
-//         </div>
-
-//         <Alert variant="destructive">
-//           <AlertCircle className="h-4 w-4" />
-//           <AlertDescription>
-//             <strong>Important Notes:</strong>
-//             <ul className="list-disc list-inside mt-1 text-xs space-y-1">
-//               <li>Drift doesn&apos;t have spot markets - you&apos;d need to use a Solana DEX like Jupiter for spot purchases</li>
-//               <li>For negative funding rates, longs receive payments - buy spot and long the perp</li>
-//               <li>For positive funding rates, shorts receive payments - buy spot and short the perp</li>
-//               <li>Consider transaction costs (~0.05% per trade), slippage, and gas fees</li>
-//               <li>Monitor positions closely - funding rates can change every 8 hours</li>
-//               <li>Maintain sufficient margin to avoid liquidation during price movements</li>
-//             </ul>
-//           </AlertDescription>
-//         </Alert>
-//       </div>
-//     </TooltipProvider>
-//   );
-// }
-
-// export default FundingArbitrageComparison;
-
-
-
 "use client"
-// Funding Rate Arbitrage Scanner
-// Compares two strategies:
-// 1. Cross-exchange arbitrage: Long low-funding exchange, short high-funding exchange
-// 2. Spot + Perp: Buy spot, then long/short perp based on funding direction
-//    - Positive funding: shorts receive (buy spot + short perp)
-//    - Negative funding: longs receive (buy spot + long perp)
-// For Drift positions, assumes spot is available via Solana DEXs
-// We check BOTH Drift and Hyperliquid for spot+perp opportunities when applicable
+// Enhanced Funding Rate Arbitrage Scanner with Historical Analysis
+// Compares two strategies and provides detailed historical profit analysis
 
 import React, { useState, useEffect } from 'react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Legend, ResponsiveContainer, Tooltip } from 'recharts';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, RefreshCw, TrendingUp, TrendingDown, AlertCircle, DollarSign, Info, Coins } from 'lucide-react';
+import { Loader2, RefreshCw, TrendingUp, TrendingDown, AlertCircle, DollarSign, Info, Coins, ArrowLeft, Calendar, BarChart3 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { Tooltip as TooltipComponent, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 interface DriftContract {
   base_currency: string;
@@ -1222,34 +55,8 @@ interface HyperliquidAssetContext {
   prevDayPx: string;
 }
 
-interface HyperliquidSpotToken {
-  name: string;
-  szDecimals: number;
-  weiDecimals: number;
-  index: number;
-  tokenId: string;
-  isCanonical: boolean;
-  evmContract: string | null;
-  fullName: string | null;
-}
-
-interface HyperliquidSpotPair {
-  name: string;
-  tokens: number[];
-  index: number;
-  isCanonical: boolean;
-}
-
-interface HyperliquidSpotContext {
-  dayNtlVlm: string;
-  markPx: string;
-  midPx: string;
-  prevDayPx: string;
-}
-
 interface ArbitrageOpportunity {
   coin: string;
-  // Cross-exchange arbitrage data
   driftOI: number;
   hyperliquidOI: number;
   driftRate: number;
@@ -1260,33 +67,81 @@ interface ArbitrageOpportunity {
   crossExchangeDirection: 'long-drift' | 'long-hyperliquid' | 'neutral';
   crossExchangeDailyProfit: number;
   crossExchangeAnnualProfit: number;
-  // Spot + Perp data
-  hasSpotMarket: boolean; // true if Hyperliquid has spot market
+  hasSpotMarket: boolean;
   spotPrice?: number;
   spotPerpDailyProfit?: number;
   spotPerpAnnualProfit?: number;
   spotPerpExchange?: 'drift' | 'hyperliquid';
   spotPerpDirection?: 'long' | 'short';
-  // Alternative spot+perp option (if both exchanges are viable)
   altSpotPerpProfit?: number;
   altSpotPerpExchange?: 'drift' | 'hyperliquid';
-  // Best strategy
   bestStrategy: 'cross-exchange' | 'spot-perp' | 'none';
   bestStrategyDailyProfit: number;
   bestStrategyAPR: number;
-  // Price data
   driftMarkPrice: number;
   hyperliquidMarkPrice: number;
   priceDeviation: number;
 }
 
-function FundingArbitrageComparison() {
+interface DriftFundingRate {
+  txSig: string;
+  slot: number;
+  ts: string;
+  recordId: string;
+  marketIndex: number;
+  fundingRate: string;
+  cumulativeFundingRateLong: string;
+  cumulativeFundingRateShort: string;
+  oraclePriceTwap: string;
+  markPriceTwap: string;
+  fundingRateLong: string;
+  fundingRateShort: string;
+  periodRevenue: string;
+  baseAssetAmountWithAmm: string;
+  baseAssetAmountWithUnsettledLp: string;
+}
+
+interface HyperliquidFundingEntry {
+  time: number;
+  fundingRate: string;
+}
+
+interface HistoricalDataPoint {
+  timestamp: number;
+  date: string;
+  driftRate?: number;
+  hyperliquidRate?: number;
+  crossExchangeProfit?: number;
+  spotPerpProfit?: number;
+  cumulativeCrossExchange?: number;
+  cumulativeSpotPerp?: number;
+}
+
+interface HistoricalAnalysis {
+  totalCrossExchangeProfit: number;
+  totalSpotPerpProfit: number;
+  bestPerformingStrategy: 'cross-exchange' | 'spot-perp';
+  avgDailyProfit: number;
+  maxDailyProfit: number;
+  winRate: number;
+  sharpeRatio: number;
+}
+
+function FundingArbitrageWithDetails() {
+  const [currentView, setCurrentView] = useState<'scanner' | 'details'>('scanner');
+  const [selectedOpportunity, setSelectedOpportunity] = useState<ArbitrageOpportunity | null>(null);
   const [opportunities, setOpportunities] = useState<ArbitrageOpportunity[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [positionSize, setPositionSize] = useState(10000);
   const [minSpread, setMinSpread] = useState(0.01);
   const [minAbsoluteRate, setMinAbsoluteRate] = useState(0.05);
+
+  // Historical analysis state
+  const [historicalData, setHistoricalData] = useState<HistoricalDataPoint[]>([]);
+  const [historicalAnalysis, setHistoricalAnalysis] = useState<HistoricalAnalysis | null>(null);
+  const [timeRange, setTimeRange] = useState<number>(7); // days
+  const [historicalLoading, setHistoricalLoading] = useState(false);
 
   const fetchDriftContracts = async (): Promise<DriftContract[]> => {
     try {
@@ -1326,9 +181,9 @@ function FundingArbitrageComparison() {
   };
 
   const fetchHyperliquidSpotData = async (): Promise<{ 
-    tokens: HyperliquidSpotToken[], 
-    pairs: HyperliquidSpotPair[], 
-    contexts: HyperliquidSpotContext[] 
+    tokens: any[], 
+    pairs: any[], 
+    contexts: any[] 
   }> => {
     try {
       const response = await fetch('https://api.hyperliquid.xyz/info', {
@@ -1351,10 +206,44 @@ function FundingArbitrageComparison() {
     }
   };
 
+  // Historical data fetching functions
+  const fetchDriftFundingHistory = async (marketSymbol: string): Promise<DriftFundingRate[]> => {
+    try {
+      const response = await fetch(`https://data.api.drift.trade/fundingRates?marketName=${marketSymbol}`);
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data = await response.json();
+      return data.fundingRates || [];
+    } catch (error) {
+      console.error(`Error fetching Drift funding history for ${marketSymbol}:`, error);
+      return [];
+    }
+  };
+
+  const fetchHyperliquidFundingHistory = async (coin: string, startTime: number, endTime: number): Promise<HyperliquidFundingEntry[]> => {
+    try {
+      const response = await fetch('https://api.hyperliquid.xyz/info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: 'fundingHistory',
+          coin: coin,
+          startTime: startTime,
+          endTime: endTime
+        })
+      });
+      
+      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+      const data: HyperliquidFundingEntry[] = await response.json();
+      return data;
+    } catch (error) {
+      console.error(`Error fetching Hyperliquid funding history for ${coin}:`, error);
+      return [];
+    }
+  };
+
   const calculateArbitrage = async () => {
     setLoading(true);
     try {
-      // Fetch data from both exchanges
       const [driftContracts, hyperliquidData, hyperliquidSpotData] = await Promise.all([
         fetchDriftContracts(),
         fetchHyperliquidData(),
@@ -1364,7 +253,6 @@ function FundingArbitrageComparison() {
       const { assets: hlAssets, contexts: hlContexts } = hyperliquidData;
       const { pairs: spotPairs, contexts: spotContexts } = hyperliquidSpotData;
 
-      // Create maps for quick lookup
       const hlDataMap = new Map<string, { asset: HyperliquidAsset, context: HyperliquidAssetContext }>();
       hlAssets.forEach((asset, index) => {
         if (hlContexts[index]) {
@@ -1372,21 +260,17 @@ function FundingArbitrageComparison() {
         }
       });
 
-      // Create spot market map - this tells us which assets have spot markets on Hyperliquid
-      const spotMarketMap = new Map<string, { pair: HyperliquidSpotPair, context: HyperliquidSpotContext }>();
+      const spotMarketMap = new Map<string, { pair: any, context: any }>();
       spotPairs.forEach((pair, index) => {
         if (spotContexts[index] && pair.name.includes('/')) {
-          // Extract base token (e.g., "BTC/USDC" -> "BTC")
           const tokenName = pair.name.split('/')[0];
           spotMarketMap.set(tokenName, { pair, context: spotContexts[index] });
         }
       });
 
-      // Find matching pairs and calculate arbitrage
       const arbOpportunities: ArbitrageOpportunity[] = [];
 
       driftContracts.forEach(driftContract => {
-        // Extract coin symbol from Drift ticker (e.g., "BTC-PERP" -> "BTC")
         const coinSymbol = driftContract.ticker_id.replace('-PERP', '');
         const hlData = hlDataMap.get(coinSymbol);
 
@@ -1398,22 +282,14 @@ function FundingArbitrageComparison() {
           const hlMarkPrice = parseFloat(hlData.context.markPx);
           const priceDeviation = Math.abs((driftMarkPrice - hlMarkPrice) / driftMarkPrice) * 100;
 
-          // Check for spot market
           const spotMarket = spotMarketMap.get(coinSymbol);
           const hasSpotMarket = !!spotMarket;
           const spotPrice = spotMarket ? parseFloat(spotMarket.context.markPx) : undefined;
 
-          // Calculate profits for both strategies
-          const fundingPerDay = 3; // Funding paid 3 times per day (every 8 hours)
-          
-          // Cross-exchange arbitrage
+          const fundingPerDay = 3;
           const crossExchangeDailyProfit = (spread / 100) * positionSize * fundingPerDay;
           const crossExchangeAnnualProfit = crossExchangeDailyProfit * 365;
 
-          // Spot + Perp strategy
-          // Strategy 1: Always check Drift spot+perp (using Solana DEX for spot)
-          // Strategy 2: Check Hyperliquid spot+perp only if HL has spot market
-          // We compare both and pick the more profitable one
           let spotPerpDailyProfit = 0;
           let spotPerpAnnualProfit = 0;
           let spotPerpExchange: 'drift' | 'hyperliquid' | undefined;
@@ -1421,17 +297,14 @@ function FundingArbitrageComparison() {
           let altSpotPerpProfit: number | undefined;
           let altSpotPerpExchange: 'drift' | 'hyperliquid' | undefined;
           
-          // Calculate Drift spot+perp profit (always available via Solana DEX)
           const driftSpotPerpProfit = Math.abs(driftRate) >= minAbsoluteRate 
             ? Math.abs(driftRate) / 100 * positionSize * fundingPerDay 
             : 0;
           
-          // Calculate Hyperliquid spot+perp profit (only if spot market exists)
           const hlSpotPerpProfit = hasSpotMarket && Math.abs(hlRate) >= minAbsoluteRate
             ? Math.abs(hlRate) / 100 * positionSize * fundingPerDay
             : 0;
           
-          // Choose the best spot+perp option
           if (driftSpotPerpProfit > 0 || hlSpotPerpProfit > 0) {
             if (driftSpotPerpProfit >= hlSpotPerpProfit) {
               spotPerpDailyProfit = driftSpotPerpProfit;
@@ -1439,7 +312,6 @@ function FundingArbitrageComparison() {
               spotPerpExchange = 'drift';
               spotPerpDirection = driftRate > 0 ? 'short' : 'long';
               
-              // Track alternative if HL is also viable
               if (hlSpotPerpProfit > 0) {
                 altSpotPerpProfit = hlSpotPerpProfit;
                 altSpotPerpExchange = 'hyperliquid';
@@ -1450,7 +322,6 @@ function FundingArbitrageComparison() {
               spotPerpExchange = 'hyperliquid';
               spotPerpDirection = hlRate > 0 ? 'short' : 'long';
               
-              // Track alternative if Drift is also viable
               if (driftSpotPerpProfit > 0) {
                 altSpotPerpProfit = driftSpotPerpProfit;
                 altSpotPerpExchange = 'drift';
@@ -1458,7 +329,6 @@ function FundingArbitrageComparison() {
             }
           }
 
-          // Determine best strategy
           let bestStrategy: 'cross-exchange' | 'spot-perp' | 'none' = 'none';
           let bestStrategyDailyProfit = 0;
           
@@ -1473,9 +343,7 @@ function FundingArbitrageComparison() {
             bestStrategyDailyProfit = crossExchangeDailyProfit;
           }
 
-          // Only include if there's a profitable strategy
           if (bestStrategy !== 'none') {
-            // Determine cross-exchange direction
             let crossExchangeDirection: 'long-drift' | 'long-hyperliquid' | 'neutral' = 'neutral';
             if (spread > 0.001) {
               crossExchangeDirection = driftRate > hlRate ? 'long-hyperliquid' : 'long-drift';
@@ -1516,7 +384,6 @@ function FundingArbitrageComparison() {
         }
       });
 
-      // Sort by best strategy profit potential
       arbOpportunities.sort((a, b) => b.bestStrategyDailyProfit - a.bestStrategyDailyProfit);
 
       setOpportunities(arbOpportunities);
@@ -1528,9 +395,202 @@ function FundingArbitrageComparison() {
     }
   };
 
+  const fetchHistoricalAnalysis = async (opportunity: ArbitrageOpportunity) => {
+    if (!opportunity) return;
+    
+    setHistoricalLoading(true);
+    
+    try {
+      const endTime = Date.now();
+      const startTime = endTime - (timeRange * 24 * 60 * 60 * 1000);
+      
+      // Fetch historical data from both exchanges
+      const [driftHistory, hyperliquidHistory] = await Promise.all([
+        fetchDriftFundingHistory(`${opportunity.coin}-PERP`),
+        fetchHyperliquidFundingHistory(opportunity.coin, startTime, endTime)
+      ]);
+
+      console.log(`Historical data for ${opportunity.coin}:`);
+      console.log(`Drift history length: ${driftHistory.length}`);
+      console.log(`Hyperliquid history length: ${hyperliquidHistory.length}`);
+      console.log('Drift sample:', driftHistory.slice(0, 2));
+      console.log('Hyperliquid sample:', hyperliquidHistory.slice(0, 2));
+
+      // Process data into time series
+      const timeSeriesData: Record<number, HistoricalDataPoint> = {};
+      
+      // Process Drift data
+      driftHistory.forEach(entry => {
+        const timestamp = parseInt(entry.ts) * 1000;
+        if (timestamp >= startTime && timestamp <= endTime) {
+          const oracleTwap = parseFloat(entry.oraclePriceTwap) / 1e6;
+          const fundingRateRaw = parseFloat(entry.fundingRate) / 1e9;
+          const fundingRatePercent = (fundingRateRaw / oracleTwap) * 100;
+          
+          if (!timeSeriesData[timestamp]) {
+            timeSeriesData[timestamp] = {
+              timestamp,
+              date: new Date(timestamp).toLocaleDateString()
+            };
+          }
+          timeSeriesData[timestamp].driftRate = fundingRatePercent;
+          
+          // Debug log for first few entries
+          if (Object.keys(timeSeriesData).length <= 3) {
+            console.log('Drift entry processed:', {
+              timestamp,
+              oracleTwap,
+              fundingRateRaw,
+              fundingRatePercent,
+              date: new Date(timestamp).toLocaleDateString()
+            });
+          }
+        }
+      });
+
+      // Process Hyperliquid data
+      hyperliquidHistory.forEach(entry => {
+        const timestamp = entry.time;
+        const fundingRatePercent = parseFloat(entry.fundingRate) * 100;
+        
+        if (!timeSeriesData[timestamp]) {
+          timeSeriesData[timestamp] = {
+            timestamp,
+            date: new Date(timestamp).toLocaleDateString()
+          };
+        }
+        timeSeriesData[timestamp].hyperliquidRate = fundingRatePercent;
+        
+        // Debug log for first few entries
+        if (Object.keys(timeSeriesData).length <= 3) {
+          console.log('Hyperliquid entry processed:', {
+            timestamp,
+            fundingRatePercent,
+            originalRate: entry.fundingRate,
+            date: new Date(timestamp).toLocaleDateString()
+          });
+        }
+      });
+
+      // Calculate profits for each data point and sort by timestamp
+      const sortedData = Object.values(timeSeriesData)
+        .sort((a, b) => a.timestamp - b.timestamp);
+
+      console.log(`Processed time series data points: ${sortedData.length}`);
+      console.log('Sample processed data:', sortedData.slice(0, 3));
+
+      let cumulativeCrossExchange = 0;
+      let cumulativeSpotPerp = 0;
+
+      const processedData = sortedData.map(point => {
+        const driftRate = point.driftRate || 0;
+        const hlRate = point.hyperliquidRate || 0;
+        
+        // Debug logs
+        console.log(`Processing data point:`, {
+          date: point.date,
+          driftRate,
+          hlRate,
+          spotPerpExchange: opportunity.spotPerpExchange,
+          spotPerpDirection: opportunity.spotPerpDirection
+        });
+        
+        // Always calculate both strategies for comparison
+        const spread = Math.abs(driftRate - hlRate);
+        const crossExchangeProfit = (spread / 100) * positionSize / 3; // Per funding period
+        
+        // Calculate spot+perp profit - always calculate regardless of best strategy
+        const spotPerpRate = opportunity.spotPerpExchange === 'drift' ? driftRate : hlRate;
+        const spotPerpProfit = (Math.abs(spotPerpRate) / 100) * positionSize / 3; // Per funding period
+        
+        console.log(`Calculated profits:`, {
+          spread,
+          crossExchangeProfit,
+          spotPerpRate,
+          spotPerpProfit,
+          positionSize
+        });
+        
+        cumulativeCrossExchange += crossExchangeProfit;
+        cumulativeSpotPerp += spotPerpProfit;
+        
+        return {
+          ...point,
+          crossExchangeProfit,
+          spotPerpProfit,
+          cumulativeCrossExchange,
+          cumulativeSpotPerp
+        };
+      });
+
+      // Calculate analysis metrics for both strategies
+      const crossExchangeProfits = processedData.map(d => d.crossExchangeProfit || 0);
+      const spotPerpProfits = processedData.map(d => d.spotPerpProfit || 0);
+      
+      console.log('Cross-exchange profits sample:', crossExchangeProfits.slice(0, 5));
+      console.log('Spot+perp profits sample:', spotPerpProfits.slice(0, 5));
+      console.log('Total cross-exchange:', cumulativeCrossExchange);
+      console.log('Total spot+perp:', cumulativeSpotPerp);
+      
+      // Use the best strategy for main metrics
+      const bestStrategyProfits = opportunity.bestStrategy === 'cross-exchange' ? crossExchangeProfits : spotPerpProfits;
+      const totalProfit = bestStrategyProfits.reduce((sum, profit) => sum + profit, 0);
+      const avgDailyProfit = totalProfit / timeRange;
+      const maxDailyProfit = Math.max(...bestStrategyProfits);
+      const winRate = bestStrategyProfits.filter(p => p > 0).length / bestStrategyProfits.length;
+      
+      // Simple Sharpe ratio calculation (assuming risk-free rate = 0)
+      const avgProfit = bestStrategyProfits.reduce((sum, p) => sum + p, 0) / bestStrategyProfits.length;
+      const variance = bestStrategyProfits.reduce((sum, p) => sum + Math.pow(p - avgProfit, 2), 0) / bestStrategyProfits.length;
+      const stdDev = Math.sqrt(variance);
+      const sharpeRatio = stdDev > 0 ? avgProfit / stdDev : 0;
+
+      const analysis: HistoricalAnalysis = {
+        totalCrossExchangeProfit: cumulativeCrossExchange,
+        totalSpotPerpProfit: cumulativeSpotPerp,
+        bestPerformingStrategy: cumulativeCrossExchange > cumulativeSpotPerp ? 'cross-exchange' : 'spot-perp',
+        avgDailyProfit,
+        maxDailyProfit,
+        winRate,
+        sharpeRatio
+      };
+
+      console.log('Final analysis:', analysis);
+
+      setHistoricalData(processedData);
+      setHistoricalAnalysis(analysis);
+      
+    } catch (error) {
+      console.error('Error fetching historical analysis:', error);
+    } finally {
+      setHistoricalLoading(false);
+    }
+  };
+
+  const handleRowClick = (opportunity: ArbitrageOpportunity) => {
+    console.log('handleRowClick called for:', opportunity.coin);
+    setSelectedOpportunity(opportunity);
+    setCurrentView('details');
+    setTimeRange(30); // Default to past month (30 days)
+    fetchHistoricalAnalysis(opportunity);
+  };
+
+  const goBackToScanner = () => {
+    setCurrentView('scanner');
+    setSelectedOpportunity(null);
+    setHistoricalData([]);
+    setHistoricalAnalysis(null);
+  };
+
   useEffect(() => {
     calculateArbitrage();
   }, []);
+
+  useEffect(() => {
+    if (selectedOpportunity && currentView === 'details') {
+      fetchHistoricalAnalysis(selectedOpportunity);
+    }
+  }, [timeRange]);
 
   const formatRate = (rate: number) => `${rate.toFixed(4)}%`;
   const formatAPR = (rate: number) => `${rate.toFixed(1)}%`;
@@ -1548,7 +608,7 @@ function FundingArbitrageComparison() {
     if (opp.bestStrategy === 'cross-exchange') {
       if (opp.crossExchangeDirection === 'long-drift') {
         return (
-          <Tooltip>
+          <TooltipComponent>
             <TooltipTrigger>
               <div className="flex items-center gap-1 text-xs">
                 <TrendingUp className="h-3 w-3 text-green-500" />
@@ -1561,11 +621,11 @@ function FundingArbitrageComparison() {
             <TooltipContent>
               <p>Cross-exchange arbitrage: Long on Drift (lower funding) and Short on Hyperliquid (higher funding) to earn the spread</p>
             </TooltipContent>
-          </Tooltip>
+          </TooltipComponent>
         );
       }
       return (
-        <Tooltip>
+        <TooltipComponent>
           <TooltipTrigger>
             <div className="flex items-center gap-1 text-xs">
               <TrendingUp className="h-3 w-3 text-green-500" />
@@ -1578,7 +638,7 @@ function FundingArbitrageComparison() {
           <TooltipContent>
             <p>Cross-exchange arbitrage: Long on Hyperliquid (lower funding) and Short on Drift (higher funding) to earn the spread</p>
           </TooltipContent>
-        </Tooltip>
+        </TooltipComponent>
       );
     } else if (opp.bestStrategy === 'spot-perp') {
       const exchange = opp.spotPerpExchange === 'hyperliquid' ? 'HL' : 'Drift';
@@ -1587,7 +647,7 @@ function FundingArbitrageComparison() {
       const spotLocation = opp.spotPerpExchange === 'hyperliquid' ? 'HL' : 'Solana DEX';
       
       return (
-        <Tooltip>
+        <TooltipComponent>
           <TooltipTrigger>
             <div className="flex items-center gap-1 text-xs">
               <Coins className="h-3 w-3 text-blue-500" />
@@ -1608,233 +668,227 @@ function FundingArbitrageComparison() {
               </p>
             )}
           </TooltipContent>
-        </Tooltip>
+        </TooltipComponent>
       );
     }
     return <span className="text-xs text-gray-400">No Arb</span>;
   };
 
-  return (
-    <TooltipProvider>
-      <div className="w-full mx-auto p-6 space-y-6">
-        {/* Controls */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span className="flex items-center gap-2">
-                <DollarSign className="h-5 w-5" />
-                Funding Rate Arbitrage Scanner
-              </span>
-              <Button 
-                onClick={calculateArbitrage} 
-                disabled={loading}
-                size="sm"
-                variant="outline"
-              >
-                {loading ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <RefreshCw className="h-4 w-4" />
-                )}
-              </Button>
-            </CardTitle>
-            <CardDescription>
-              Compares cross-exchange arbitrage vs spot+short strategies to find the best opportunities
-              {lastUpdate && <span className="ml-2 text-xs">• Last updated: {lastUpdate}</span>}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div>
-                <Label htmlFor="position-size">Position Size (USD)</Label>
-                <Input
-                  id="position-size"
-                  type="number"
-                  value={positionSize}
-                  onChange={(e) => setPositionSize(Number(e.target.value))}
-                  placeholder="10000"
-                />
-              </div>
-              <div>
-                <Label htmlFor="min-spread">
-                  Min Spread (%)
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="inline h-3 w-3 ml-1 text-gray-400" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Minimum funding rate difference for cross-exchange arbitrage</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </Label>
-                <Input
-                  id="min-spread"
-                  type="number"
-                  step="0.01"
-                  value={minSpread}
-                  onChange={(e) => setMinSpread(Number(e.target.value))}
-                  placeholder="0.01"
-                />
-              </div>
-              <div>
-                <Label htmlFor="min-absolute">
-                  Min Absolute Rate (%)
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <Info className="inline h-3 w-3 ml-1 text-gray-400" />
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p>Minimum absolute funding rate for spot+perp strategy (works for both positive and negative rates)</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </Label>
-                <Input
-                  id="min-absolute"
-                  type="number"
-                  step="0.01"
-                  value={minAbsoluteRate}
-                  onChange={(e) => setMinAbsoluteRate(Number(e.target.value))}
-                  placeholder="0.05"
-                />
-              </div>
-              <div className="flex items-end">
-                <Button onClick={calculateArbitrage} className="w-full">
-                  Recalculate
+  // Scanner View
+  if (currentView === 'scanner') {
+    return (
+      <TooltipProvider>
+        <div className="w-full mx-auto p-6 space-y-6">
+          {/* Controls */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span className="flex items-center gap-2">
+                  <DollarSign className="h-5 w-5" />
+                  Funding Rate Arbitrage Scanner
+                </span>
+                <Button 
+                  onClick={calculateArbitrage} 
+                  disabled={loading}
+                  size="sm"
+                  variant="outline"
+                >
+                  {loading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
                 </Button>
+              </CardTitle>
+              <CardDescription>
+                Compares cross-exchange arbitrage vs spot+perp strategies. Click any row to view historical analysis.
+                {lastUpdate && <span className="ml-2 text-xs">• Last updated: {lastUpdate}</span>}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                  <Label htmlFor="position-size">Position Size (USD)</Label>
+                  <Input
+                    id="position-size"
+                    type="number"
+                    value={positionSize}
+                    onChange={(e) => setPositionSize(Number(e.target.value))}
+                    placeholder="10000"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="min-spread">
+                    Min Spread (%)
+                    <TooltipComponent>
+                      <TooltipTrigger asChild>
+                        <Info className="inline h-3 w-3 ml-1 text-gray-400" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Minimum funding rate difference for cross-exchange arbitrage</p>
+                      </TooltipContent>
+                    </TooltipComponent>
+                  </Label>
+                  <Input
+                    id="min-spread"
+                    type="number"
+                    step="0.01"
+                    value={minSpread}
+                    onChange={(e) => setMinSpread(Number(e.target.value))}
+                    placeholder="0.01"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="min-absolute">
+                    Min Absolute Rate (%)
+                    <TooltipComponent>
+                      <TooltipTrigger asChild>
+                        <Info className="inline h-3 w-3 ml-1 text-gray-400" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>Minimum absolute funding rate for spot+perp strategy</p>
+                      </TooltipContent>
+                    </TooltipComponent>
+                  </Label>
+                  <Input
+                    id="min-absolute"
+                    type="number"
+                    step="0.01"
+                    value={minAbsoluteRate}
+                    onChange={(e) => setMinAbsoluteRate(Number(e.target.value))}
+                    placeholder="0.05"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <Button onClick={calculateArbitrage} className="w-full">
+                    Recalculate
+                  </Button>
+                </div>
               </div>
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
 
-        {/* Results Table */}
-        <Card>
-          <CardContent className="p-0">
-            {loading ? (
-              <div className="flex items-center justify-center h-64">
-                <Loader2 className="h-8 w-8 animate-spin" />
-                <span className="ml-2">Scanning for arbitrage opportunities...</span>
-              </div>
-            ) : opportunities.length === 0 ? (
-              <div className="flex items-center justify-center h-64">
-                <AlertCircle className="h-8 w-8 text-gray-400" />
-                <span className="ml-2 text-gray-500">No profitable opportunities found with current filters</span>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead className="bg-gray-50">
-                    <tr>
-                      <th className="text-left py-3 px-4 font-medium">Asset</th>
-                      <th className="text-left py-3 px-4 font-medium">Drift Rate</th>
-                      <th className="text-left py-3 px-4 font-medium">HL Rate</th>
-                      <th className="text-left py-3 px-4 font-medium">Spread</th>
-                      <th className="text-left py-3 px-4 font-medium">
-                        Best Strategy
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Info className="inline h-3 w-3 ml-1 text-gray-400" />
-                          </TooltipTrigger>
-                          <TooltipContent className="max-w-xs">
-                            <p>Automatically selects the most profitable strategy: cross-exchange arbitrage or spot+perp (long/short based on funding direction)</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </th>
-                      <th className="text-left py-3 px-4 font-medium">Daily Profit</th>
-                      <th className="text-left py-3 px-4 font-medium">APR</th>
-                      <th className="text-left py-3 px-4 font-medium">
-                        Spot
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <Info className="inline h-3 w-3 ml-1 text-gray-400" />
-                          </TooltipTrigger>
-                          <TooltipContent>
-                            <p>Shows if spot market exists on Hyperliquid. For Drift strategies, we assume spot is available via Solana DEXs.</p>
-                          </TooltipContent>
-                        </Tooltip>
-                      </th>
-                      <th className="text-left py-3 px-4 font-medium">Open Interest</th>
-                      <th className="text-left py-3 px-4 font-medium">Price Dev</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {opportunities.map((opp) => (
-                      <tr key={opp.coin} className="border-b hover:bg-gray-50 transition-colors">
-                        <td className="py-3 px-4 font-medium">{opp.coin}</td>
-                        <td className={`py-3 px-4 ${opp.driftRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {formatRate(opp.driftRate)}
-                          {opp.driftRate < 0 && (
-                            <span className="ml-1 text-xs text-gray-500">(longs receive)</span>
-                          )}
-                        </td>
-                        <td className={`py-3 px-4 ${opp.hyperliquidRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                          {formatRate(opp.hyperliquidRate)}
-                          {opp.hyperliquidRate < 0 && (
-                            <span className="ml-1 text-xs text-gray-500">(longs receive)</span>
-                          )}
-                        </td>
-                        <td className={`py-3 px-4 ${getSpreadColor(opp.arbitrageSpread)}`}>
-                          {formatRate(opp.arbitrageSpread)}
-                        </td>
-                        <td className="py-3 px-4">{getStrategyDisplay(opp)}</td>
-                        <td className="py-3 px-4 font-medium text-green-600">
-                          <Tooltip>
-                            <TooltipTrigger>
-                              <span>{formatMoney(opp.bestStrategyDailyProfit)}</span>
+          {/* Results Table */}
+          <Card>
+            <CardContent className="p-0">
+              {loading ? (
+                <div className="flex items-center justify-center h-64">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                  <span className="ml-2">Scanning for arbitrage opportunities...</span>
+                </div>
+              ) : opportunities.length === 0 ? (
+                <div className="flex items-center justify-center h-64">
+                  <AlertCircle className="h-8 w-8 text-gray-400" />
+                  <span className="ml-2 text-gray-500">No profitable opportunities found with current filters</span>
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead className="bg-gray-50">
+                      <tr>
+                        <th className="text-left py-3 px-4 font-medium">
+                          Asset 
+                          <TooltipComponent>
+                            <TooltipTrigger asChild>
+                              <Info className="inline h-3 w-3 ml-1 text-gray-400" />
                             </TooltipTrigger>
                             <TooltipContent>
-                              {opp.bestStrategy === 'cross-exchange' 
-                                ? `Earning ${opp.arbitrageSpread.toFixed(3)}% spread × 3 times daily`
-                                : `Earning ${Math.abs(opp.spotPerpExchange === 'drift' ? opp.driftRate : opp.hyperliquidRate).toFixed(3)}% × 3 times daily`
-                              }
+                              <p>Click any row to view historical analysis</p>
                             </TooltipContent>
-                          </Tooltip>
-                        </td>
-                        <td className="py-3 px-4 text-sm">
-                          {formatAPR(opp.bestStrategyAPR)}
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="space-y-1">
-                            {opp.hasSpotMarket ? (
-                              <Badge variant="secondary" className="text-xs">
-                                <Coins className="h-3 w-3 mr-1" />
-                                HL Spot
-                              </Badge>
-                            ) : (
-                              <Badge variant="outline" className="text-xs text-gray-400">
-                                DEX only
-                              </Badge>
-                            )}
-                            {opp.bestStrategy === 'spot-perp' && (
-                              <div className="text-xs text-gray-500">
-                                Using: {opp.spotPerpExchange === 'hyperliquid' ? 'HL' : 'Solana DEX'}
-                                {opp.altSpotPerpExchange && (
-                                  <span className="text-yellow-600"> (2 options)</span>
-                                )}
-                              </div>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-3 px-4">
-                          <div className="text-xs">
-                            <div>D: {formatOI(opp.driftOI)}</div>
-                            <div>H: {formatOI(opp.hyperliquidOI)}</div>
-                          </div>
-                        </td>
-                        <td className={`py-3 px-4 text-xs ${opp.priceDeviation > 0.5 ? 'text-red-500' : 'text-gray-500'}`}>
-                          {opp.priceDeviation.toFixed(2)}%
-                        </td>
+                          </TooltipComponent>
+                        </th>
+                        <th className="text-left py-3 px-4 font-medium">Drift Rate</th>
+                        <th className="text-left py-3 px-4 font-medium">HL Rate</th>
+                        <th className="text-left py-3 px-4 font-medium">Spread</th>
+                        <th className="text-left py-3 px-4 font-medium">Best Strategy</th>
+                        <th className="text-left py-3 px-4 font-medium">Daily Profit</th>
+                        <th className="text-left py-3 px-4 font-medium">APR</th>
+                        <th className="text-left py-3 px-4 font-medium">Spot</th>
+                        <th className="text-left py-3 px-4 font-medium">Open Interest</th>
+                        <th className="text-left py-3 px-4 font-medium">Price Dev</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                    </thead>
+                    <tbody>
+                      {opportunities.map((opp) => (
+                        <tr 
+                          key={opp.coin} 
+                          className="border-b hover:bg-blue-50 transition-colors cursor-pointer group"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            console.log('Row clicked for:', opp.coin);
+                            handleRowClick(opp);
+                          }}
+                        >
+                          <td className="py-3 px-4 font-medium text-blue-600 group-hover:text-blue-800">
+                            <div className="flex items-center gap-1">
+                              {opp.coin}
+                              <BarChart3 className="h-3 w-3" />
+                            </div>
+                          </td>
+                          <td className={`py-3 px-4 ${opp.driftRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatRate(opp.driftRate)}
+                            {opp.driftRate < 0 && (
+                              <span className="ml-1 text-xs text-gray-500">(longs receive)</span>
+                            )}
+                          </td>
+                          <td className={`py-3 px-4 ${opp.hyperliquidRate >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                            {formatRate(opp.hyperliquidRate)}
+                            {opp.hyperliquidRate < 0 && (
+                              <span className="ml-1 text-xs text-gray-500">(longs receive)</span>
+                            )}
+                          </td>
+                          <td className={`py-3 px-4 ${getSpreadColor(opp.arbitrageSpread)}`}>
+                            {formatRate(opp.arbitrageSpread)}
+                          </td>
+                          <td className="py-3 px-4">{getStrategyDisplay(opp)}</td>
+                          <td className="py-3 px-4 font-medium text-green-600">
+                            {formatMoney(opp.bestStrategyDailyProfit)}
+                          </td>
+                          <td className="py-3 px-4 text-sm">
+                            {formatAPR(opp.bestStrategyAPR)}
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="space-y-1">
+                              {opp.hasSpotMarket ? (
+                                <Badge variant="secondary" className="text-xs">
+                                  <Coins className="h-3 w-3 mr-1" />
+                                  HL Spot
+                                </Badge>
+                              ) : (
+                                <Badge variant="outline" className="text-xs text-gray-400">
+                                  DEX only
+                                </Badge>
+                              )}
+                              {opp.bestStrategy === 'spot-perp' && (
+                                <div className="text-xs text-gray-500">
+                                  Using: {opp.spotPerpExchange === 'hyperliquid' ? 'HL' : 'Solana DEX'}
+                                  {opp.altSpotPerpExchange && (
+                                    <span className="text-yellow-600"> (2 options)</span>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </td>
+                          <td className="py-3 px-4">
+                            <div className="text-xs">
+                              <div>D: {formatOI(opp.driftOI)}</div>
+                              <div>H: {formatOI(opp.hyperliquidOI)}</div>
+                            </div>
+                          </td>
+                          <td className={`py-3 px-4 text-xs ${opp.priceDeviation > 0.5 ? 'text-red-500' : 'text-gray-500'}`}>
+                            {opp.priceDeviation.toFixed(2)}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-        {/* Summary Stats */}
-        {opportunities.length > 0 && (
-          <>
+          {/* Summary Stats */}
+          {opportunities.length > 0 && (
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
               <Card>
                 <CardHeader className="pb-3">
@@ -1900,41 +954,392 @@ function FundingArbitrageComparison() {
                 </CardContent>
               </Card>
             </div>
+          )}
+        </div>
+      </TooltipProvider>
+    );
+  }
+
+  // Historical Analysis View
+  return (
+    <TooltipProvider>
+      <div className="w-full mx-auto p-6 space-y-6">
+        {/* Header */}
+        <Card>
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={goBackToScanner}
+                  className="flex items-center gap-2"
+                >
+                  <ArrowLeft className="h-4 w-4" />
+                  Back to Scanner
+                </Button>
+                <div>
+                  <CardTitle className="flex items-center gap-2">
+                    <BarChart3 className="h-5 w-5" />
+                    {selectedOpportunity?.coin} Historical Analysis
+                  </CardTitle>
+                  <CardDescription>
+                    Historical funding rates and strategy performance analysis
+                  </CardDescription>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Select value={timeRange.toString()} onValueChange={(value) => setTimeRange(parseInt(value))}>
+                  <SelectTrigger className="w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="7">7 days</SelectItem>
+                    <SelectItem value="14">2 weeks</SelectItem>
+                    <SelectItem value="30">1 month</SelectItem>
+                    <SelectItem value="90">3 months</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => fetchHistoricalAnalysis(selectedOpportunity!)}
+                  disabled={historicalLoading}
+                >
+                  {historicalLoading ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <RefreshCw className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+            </div>
+          </CardHeader>
+        </Card>
+
+        {/* Current Strategy Info */}
+        {selectedOpportunity && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium">Current Best Strategy</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="text-lg font-bold">
+                    {selectedOpportunity.bestStrategy === 'cross-exchange' ? 'Cross-Exchange' : 'Spot+Perp'}
+                  </div>
+                  <div className="text-sm text-gray-600">
+                    {formatMoney(selectedOpportunity.bestStrategyDailyProfit)} daily
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    {formatAPR(selectedOpportunity.bestStrategyAPR)} APR
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium">Current Rates</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="flex justify-between text-sm">
+                    <span>Drift:</span>
+                    <span className={selectedOpportunity.driftRate >= 0 ? 'text-green-600' : 'text-red-600'}>
+                      {formatRate(selectedOpportunity.driftRate)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm">
+                    <span>Hyperliquid:</span>
+                    <span className={selectedOpportunity.hyperliquidRate >= 0 ? 'text-green-600' : 'text-red-600'}>
+                      {formatRate(selectedOpportunity.hyperliquidRate)}
+                    </span>
+                  </div>
+                  <div className="flex justify-between text-sm font-medium pt-1 border-t">
+                    <span>Spread:</span>
+                    <span>{formatRate(selectedOpportunity.arbitrageSpread)}</span>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium">Position Size</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  <div className="text-lg font-bold">
+                    {formatMoney(positionSize)}
+                  </div>
+                  <div className="text-xs text-gray-500">
+                    Analysis based on this position size
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Historical Analysis */}
+        {historicalLoading ? (
+          <Card>
+            <CardContent className="flex items-center justify-center h-64">
+              <Loader2 className="h-8 w-8 animate-spin" />
+              <span className="ml-2">Loading historical data...</span>
+            </CardContent>
+          </Card>
+        ) : historicalData.length === 0 ? (
+          <Card>
+            <CardContent className="flex items-center justify-center h-64">
+              <AlertCircle className="h-8 w-8 text-gray-400" />
+              <span className="ml-2 text-gray-500">No historical data available for the selected time range</span>
+            </CardContent>
+          </Card>
+        ) : (
+          <>
+            {/* Performance Summary */}
+            {historicalAnalysis && (
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium">Total Profit ({timeRange}d)</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold text-green-600">
+                      {selectedOpportunity?.bestStrategy === 'cross-exchange' 
+                        ? formatMoney(historicalAnalysis.totalCrossExchangeProfit)
+                        : formatMoney(historicalAnalysis.totalSpotPerpProfit)
+                      }
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      {formatMoney(historicalAnalysis.avgDailyProfit)} avg daily
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium">Win Rate</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {(historicalAnalysis.winRate * 100).toFixed(1)}%
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Profitable funding periods
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium">Max Daily Profit</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {formatMoney(historicalAnalysis.maxDailyProfit)}
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Best single day
+                    </p>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium">Sharpe Ratio</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="text-2xl font-bold">
+                      {historicalAnalysis.sharpeRatio.toFixed(2)}
+                    </div>
+                    <p className="text-xs text-gray-500">
+                      Risk-adjusted returns
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            )}
+
+            {/* Charts */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              {/* Funding Rates Chart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Historical Funding Rates</CardTitle>
+                  <CardDescription>
+                    Funding rates over the last {timeRange} days
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={historicalData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis 
+                          dataKey="date" 
+                          tick={{ fontSize: 12 }}
+                          angle={-45}
+                          textAnchor="end"
+                          height={60}
+                        />
+                        <YAxis 
+                          tick={{ fontSize: 12 }}
+                          label={{ value: 'Funding Rate (%)', angle: -90, position: 'insideLeft' }}
+                        />
+                        <Tooltip 
+                          labelFormatter={(value) => `Date: ${value}`}
+                          formatter={(value: number, name: string) => [
+                            `${value?.toFixed(4)}%`, 
+                            name === 'driftRate' ? 'Drift' : 'Hyperliquid'
+                          ]}
+                        />
+                        <Legend />
+                        <Line 
+                          type="monotone" 
+                          dataKey="driftRate" 
+                          stroke="#8b5cf6" 
+                          strokeWidth={2}
+                          name="Drift"
+                          connectNulls={false}
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="hyperliquidRate" 
+                          stroke="#06b6d4" 
+                          strokeWidth={2}
+                          name="Hyperliquid"
+                          connectNulls={false}
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Cumulative Profit Chart */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Cumulative Strategy Performance</CardTitle>
+                  <CardDescription>
+                    Strategy profits over time (${positionSize.toLocaleString()} position)
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="h-80">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={historicalData}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis 
+                          dataKey="date" 
+                          tick={{ fontSize: 12 }}
+                          angle={-45}
+                          textAnchor="end"
+                          height={60}
+                        />
+                        <YAxis 
+                          tick={{ fontSize: 12 }}
+                          label={{ value: 'Cumulative Profit ($)', angle: -90, position: 'insideLeft' }}
+                        />
+                        <Tooltip 
+                          labelFormatter={(value) => `Date: ${value}`}
+                          formatter={(value: number, name: string) => [
+                            `$${value?.toFixed(2)}`, 
+                            name === 'cumulativeCrossExchange' ? 'Cross-Exchange' : 'Spot+Perp'
+                          ]}
+                        />
+                        <Legend />
+                        <Line 
+                          type="monotone" 
+                          dataKey="cumulativeCrossExchange" 
+                          stroke="#10b981" 
+                          strokeWidth={2}
+                          name="Cross-Exchange"
+                        />
+                        <Line 
+                          type="monotone" 
+                          dataKey="cumulativeSpotPerp" 
+                          stroke="#f59e0b" 
+                          strokeWidth={2}
+                          name="Spot+Perp"
+                        />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            {/* Strategy Comparison */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Strategy Comparison Summary</CardTitle>
+                <CardDescription>
+                  Performance comparison over the last {timeRange} days
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <TrendingUp className="h-5 w-5 text-green-500" />
+                      <h3 className="font-semibold">Cross-Exchange Arbitrage</h3>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>Total Profit:</span>
+                        <span className="font-medium">{formatMoney(historicalAnalysis?.totalCrossExchangeProfit || 0)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Strategy:</span>
+                        <span>Long {selectedOpportunity?.crossExchangeDirection === 'long-drift' ? 'Drift' : 'Hyperliquid'}, Short {selectedOpportunity?.crossExchangeDirection === 'long-drift' ? 'Hyperliquid' : 'Drift'}</span>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-2">
+                        Earns the spread between funding rates on both exchanges. Market neutral position.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-2">
+                      <Coins className="h-5 w-5 text-blue-500" />
+                      <h3 className="font-semibold">Spot + Perp Strategy</h3>
+                    </div>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex justify-between">
+                        <span>Total Profit:</span>
+                        <span className="font-medium">{formatMoney(historicalAnalysis?.totalSpotPerpProfit || 0)}</span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span>Strategy:</span>
+                        <span>Spot + {selectedOpportunity?.spotPerpDirection} on {selectedOpportunity?.spotPerpExchange}</span>
+                      </div>
+                      <div className="text-xs text-gray-500 mt-2">
+                        Buy spot and {selectedOpportunity?.spotPerpDirection} perpetual to capture full funding rate. 
+                        {selectedOpportunity?.spotPerpExchange === 'drift' ? ' Uses Solana DEX for spot.' : ' Uses Hyperliquid spot market.'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
           </>
         )}
 
-        {/* Strategy Guide */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <Alert>
-            <TrendingUp className="h-4 w-4" />
-            <AlertDescription>
-              <strong>Cross-Exchange Arbitrage:</strong> Long the exchange with lower funding rate and short the one with higher funding rate. 
-              You earn the spread between the two rates every 8 hours while remaining market neutral. 
-              Best when there&apos;s a significant rate difference between exchanges.
-            </AlertDescription>
-          </Alert>
-          
-          <Alert>
-            <Coins className="h-4 w-4" />
-            <AlertDescription>
-              <strong>Spot + Perp Strategy:</strong> Buy spot and either long or short the perpetual based on funding direction. 
-              When funding is positive, shorts receive payments. When negative, longs receive payments. 
-              This captures the full funding rate. For Drift positions, spot is purchased on Solana DEXs like Jupiter.
-            </AlertDescription>
-          </Alert>
-        </div>
-
-        <Alert variant="destructive">
+        {/* Important Notes */}
+        <Alert>
           <AlertCircle className="h-4 w-4" />
           <AlertDescription>
-            <strong>Important Notes:</strong>
+            <strong>Historical Analysis Notes:</strong>
             <ul className="list-disc list-inside mt-1 text-xs space-y-1">
-              <li>Drift doesn&apos;t have spot markets - you&apos;d need to use a Solana DEX like Jupiter for spot purchases</li>
-              <li>For negative funding rates, longs receive payments - buy spot and long the perp</li>
-              <li>For positive funding rates, shorts receive payments - buy spot and short the perp</li>
-              <li>Consider transaction costs (~0.05% per trade), slippage, and gas fees</li>
-              <li>Monitor positions closely - funding rates can change every 8 hours</li>
-              <li>Maintain sufficient margin to avoid liquidation during price movements</li>
+              <li>Profits are calculated per funding period (every 8 hours)</li>
+              <li>Does not include transaction costs, slippage, or gas fees</li>
+              <li>Assumes immediate execution at historical rates</li>
+              <li>Past performance does not guarantee future results</li>
+              <li>Consider market volatility and liquidation risks when implementing strategies</li>
             </ul>
           </AlertDescription>
         </Alert>
@@ -1943,4 +1348,4 @@ function FundingArbitrageComparison() {
   );
 }
 
-export default FundingArbitrageComparison;
+export default FundingArbitrageWithDetails;
