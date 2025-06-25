@@ -8,7 +8,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Loader2, RefreshCw, TrendingUp, TrendingDown, AlertCircle, DollarSign, Info, Coins, ArrowLeft, Calendar, BarChart3 } from 'lucide-react';
+import { Loader2, RefreshCw, TrendingUp, TrendingDown, AlertCircle, DollarSign, Info, Coins, ArrowLeft, BarChart3 } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tooltip as TooltipComponent, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
