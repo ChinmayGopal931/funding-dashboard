@@ -477,53 +477,16 @@ function FundingArbitrageWithDetails() {
       const sortedData = Object.values(timeSeriesData)
         .sort((a, b) => a.timestamp - b.timestamp);
 
-console.log(`Processed time series data points: ${sortedData.length}`);
+      console.log(`Processed time series data points: ${sortedData.length}`);
       console.log('Sample processed data:', sortedData.slice(0, 3));
-
-      // Debug the current strategy selection
-      console.log('=== STRATEGY SELECTION DEBUG ===');
-      console.log('Selected opportunity best strategy:', opportunity.bestStrategy);
-      console.log('Spot+perp exchange:', opportunity.spotPerpExchange);
-      console.log('Spot+perp direction:', opportunity.spotPerpDirection);
-      console.log('Current rates - Drift:', opportunity.driftRate, 'HL:', opportunity.hyperliquidRate);
-      console.log('Current daily profits - Cross-exchange:', opportunity.crossExchangeDailyProfit, 'Spot+perp:', opportunity.spotPerpDailyProfit);
-      console.log('Min absolute rate threshold:', minAbsoluteRate);
-      console.log('Position size for historical analysis:', positionSize);
 
       let cumulativeCrossExchange = 0;
       let cumulativeSpotPerp = 0;
 
-      const processedData = sortedData.map((point, index) => {
+      const processedData = sortedData.map(point => {
         const driftRate = point.driftRate || 0;
         const hlRate = point.hyperliquidRate || 0;
         
-        // Always calculate both strategies for comparison
-        const spread = Math.abs(driftRate - hlRate);
-        const crossExchangeProfit = (spread / 100) * positionSize / 3; // Per funding period
-        
-        // Calculate spot+perp profit using the SAME logic as the main scanner
-        const spotPerpRate = opportunity.spotPerpExchange === 'drift' ? driftRate : hlRate;
-        
-        // CRITICAL: Use the same logic as main scanner - only profit if rate meets minimum threshold
-        let spotPerpProfit = 0;
-        if (Math.abs(spotPerpRate) >= minAbsoluteRate) {
-          spotPerpProfit = (Math.abs(spotPerpRate) / 100) * positionSize / 3; // Per funding period
-        }
-        
-        // Debug logs for first few entries and any significant discrepancies
-        if (index < 5 || Math.abs(crossExchangeProfit - spotPerpProfit) > 10) {
-          console.log(`=== DATA POINT ${index} DEBUG ===`);
-          console.log(`Date: ${point.date}`);
-          console.log(`Rates - Drift: ${driftRate.toFixed(4)}%, HL: ${hlRate.toFixed(4)}%`);
-          console.log(`Spread: ${spread.toFixed(4)}%`);
-          console.log(`SpotPerp rate (${opportunity.spotPerpExchange}): ${spotPerpRate.toFixed(4)}%`);
-          console.log(`Rate meets threshold (${minAbsoluteRate}%): ${Math.abs(spotPerpRate) >= minAbsoluteRate}`);
-          console.log(`Cross-exchange profit: $${crossExchangeProfit.toFixed(2)}`);
-          console.log(`Spot+perp profit: $${spotPerpProfit.toFixed(2)}`);
-          console.log(`Which is better: ${crossExchangeProfit > spotPerpProfit ? 'Cross-exchange' : 'Spot+perp'}`);
-          console.log(`Current strategy says: ${opportunity.bestStrategy}`);
-        }
-
         // Debug logs
         console.log(`Processing data point:`, {
           date: point.date,
@@ -533,7 +496,14 @@ console.log(`Processed time series data points: ${sortedData.length}`);
           spotPerpDirection: opportunity.spotPerpDirection
         });
         
-
+        // Always calculate both strategies for comparison
+        const spread = Math.abs(driftRate - hlRate);
+        const crossExchangeProfit = (spread / 100) * positionSize / 3; // Per funding period
+        
+        // Calculate spot+perp profit - always calculate regardless of best strategy
+        const spotPerpRate = opportunity.spotPerpExchange === 'drift' ? driftRate : hlRate;
+        const spotPerpProfit = (Math.abs(spotPerpRate) / 100) * positionSize / 3; // Per funding period
+        
         console.log(`Calculated profits:`, {
           spread,
           crossExchangeProfit,

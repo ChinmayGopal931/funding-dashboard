@@ -12,6 +12,7 @@ import {
 import FundingRatesChart from '@/components/FundingRatesChart';
 import DriftFundingRatesChart from '@/components/DriftfundingRateChart';
 import FundingArbitrageWithDetails from '@/components/Comparison';
+// import FundingComparison from '@/components/Test';
 
 
 
@@ -44,7 +45,14 @@ const navigationItems: NavItem[] = [
     icon: <Activity className="h-5 w-5" />,
     component: <DriftFundingRatesChart/>,
     description: 'Drift historical funding rates'
-  }
+  },
+  //   {
+  //   id: 'test',
+  //   label: 'test Charts',
+  //   icon: <Activity className="h-5 w-5" />,
+  //   component: <FundingComparison/>,
+  //   description: 'Drift historical funding rates'
+  // }
 ];
 
 export default function FundingDashboard() {
