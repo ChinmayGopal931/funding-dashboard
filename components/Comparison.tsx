@@ -235,6 +235,9 @@ function FundingArbitrageWithDetails() {
       
       if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
       const data: HyperliquidFundingEntry[] = await response.json();
+      
+      // Analysis of time range in the returned data is performed later
+      
       return data;
     } catch (error) {
       console.error(`Error fetching Hyperliquid funding history for ${coin}:`, error);
@@ -411,35 +414,33 @@ function FundingArbitrageWithDetails() {
         fetchHyperliquidFundingHistory(opportunity.coin, startTime, endTime)
       ]);
 
-      console.log(`Historical data for ${opportunity.coin}:`);
-      console.log(`Drift history length: ${driftHistory.length}`);
-      console.log(`Hyperliquid history length: ${hyperliquidHistory.length}`);
-      console.log('Drift sample:', driftHistory.slice(0, 2));
-      console.log('Hyperliquid sample:', hyperliquidHistory.slice(0, 2));
-
       // Process data into time series
-      const timeSeriesData: Record<number, HistoricalDataPoint> = {};
+      const timeSeriesData: Record<string, HistoricalDataPoint> = {};
       
       // Process Drift data
       driftHistory.forEach(entry => {
-        const timestamp = parseInt(entry.ts) * 1000;
+        // Convert timestamp to milliseconds uniformly
+        const timestamp = parseInt(entry.ts) * 1000; // Ensure it's in milliseconds
+        
         if (timestamp >= startTime && timestamp <= endTime) {
+          const dateKey = new Date(timestamp).toISOString().split('T')[0]; // Use ISO date as key
           const oracleTwap = parseFloat(entry.oraclePriceTwap) / 1e6;
           const fundingRateRaw = parseFloat(entry.fundingRate) / 1e9;
           const fundingRatePercent = (fundingRateRaw / oracleTwap) * 100;
           
-          if (!timeSeriesData[timestamp]) {
-            timeSeriesData[timestamp] = {
+          if (!timeSeriesData[dateKey]) {
+            timeSeriesData[dateKey] = {
               timestamp,
               date: new Date(timestamp).toLocaleDateString()
             };
           }
-          timeSeriesData[timestamp].driftRate = fundingRatePercent;
+          timeSeriesData[dateKey].driftRate = fundingRatePercent;
           
           // Debug log for first few entries
           if (Object.keys(timeSeriesData).length <= 3) {
             console.log('Drift entry processed:', {
               timestamp,
+              dateKey,
               oracleTwap,
               fundingRateRaw,
               fundingRatePercent,
@@ -451,34 +452,27 @@ function FundingArbitrageWithDetails() {
 
       // Process Hyperliquid data
       hyperliquidHistory.forEach(entry => {
-        const timestamp = entry.time;
-        const fundingRatePercent = parseFloat(entry.fundingRate) * 100;
+        // Ensure timestamp is in milliseconds
+        const timestamp = entry.time * (entry.time < 10000000000 ? 1000 : 1); // Convert to ms if in seconds
         
-        if (!timeSeriesData[timestamp]) {
-          timeSeriesData[timestamp] = {
-            timestamp,
-            date: new Date(timestamp).toLocaleDateString()
-          };
-        }
-        timeSeriesData[timestamp].hyperliquidRate = fundingRatePercent;
-        
-        // Debug log for first few entries
-        if (Object.keys(timeSeriesData).length <= 3) {
-          console.log('Hyperliquid entry processed:', {
-            timestamp,
-            fundingRatePercent,
-            originalRate: entry.fundingRate,
-            date: new Date(timestamp).toLocaleDateString()
-          });
+        // Add the same time range check that's used for Drift data
+        if (timestamp >= startTime && timestamp <= endTime) {
+          const dateKey = new Date(timestamp).toISOString().split('T')[0]; // Use same ISO date key format
+          const fundingRatePercent = parseFloat(entry.fundingRate) * 100;
+          
+          if (!timeSeriesData[dateKey]) {
+            timeSeriesData[dateKey] = {
+              timestamp,
+              date: new Date(timestamp).toLocaleDateString()
+            };
+          }
+          timeSeriesData[dateKey].hyperliquidRate = fundingRatePercent;
         }
       });
 
       // Calculate profits for each data point and sort by timestamp
       const sortedData = Object.values(timeSeriesData)
         .sort((a, b) => a.timestamp - b.timestamp);
-
-      console.log(`Processed time series data points: ${sortedData.length}`);
-      console.log('Sample processed data:', sortedData.slice(0, 3));
 
       let cumulativeCrossExchange = 0;
       let cumulativeSpotPerp = 0;
@@ -572,7 +566,7 @@ function FundingArbitrageWithDetails() {
     console.log('handleRowClick called for:', opportunity.coin);
     setSelectedOpportunity(opportunity);
     setCurrentView('details');
-    setTimeRange(30); // Default to past month (30 days)
+    setTimeRange(21); // Default to past month (21 days)
     fetchHistoricalAnalysis(opportunity);
   };
 
@@ -1193,10 +1187,18 @@ function FundingArbitrageWithDetails() {
                         />
                         <Tooltip 
                           labelFormatter={(value) => `Date: ${value}`}
-                          formatter={(value: number, name: string) => [
-                            `${value?.toFixed(4)}%`, 
-                            name === 'driftRate' ? 'Drift' : 'Hyperliquid'
-                          ]}
+                          formatter={(value: number, name: string) => {
+                            // Correctly identify the source based on the exact dataKey name
+                            let source = '';
+                            if (name === 'driftRate') {
+                              source = 'Drift';
+                            } else if (name === 'hyperliquidRate') {
+                              source = 'Hyperliquid';
+                            } else {
+                              source = name; // Fallback to the raw name if it's neither
+                            }
+                            return [`${value?.toFixed(4)}%`, source];
+                          }}
                         />
                         <Legend />
                         <Line 
