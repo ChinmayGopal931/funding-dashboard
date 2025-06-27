@@ -1,5 +1,7 @@
+// app/layout.tsx
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
+import { WebSocketProvider } from "@/contexts/WebSocketProvider";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -37,7 +39,7 @@ export const metadata: Metadata = {
     siteName: "DEX Funding Dashboard",
     images: [
       {
-        url: "/og-image.png", // Add a 1200x630 image in /public
+        url: "/og-image.png",
         width: 1200,
         height: 630,
         alt: "DEX Funding Rate Dashboard",
@@ -66,7 +68,6 @@ export const metadata: Metadata = {
   },
 };
 
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -74,10 +75,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
-      >
-        {children}
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
+        <WebSocketProvider>
+          {children}
+        </WebSocketProvider>
       </body>
     </html>
   );

@@ -224,13 +224,29 @@ function FundingRatesChart() {
                 <LineChart data={data}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-                    dataKey="dateTime"
-                    tickFormatter={(value) => new Date(value).toLocaleDateString()}
-                  />
-                  <YAxis 
-                    label={{ value: 'Funding Rate (%)', angle: -90, position: 'insideLeft' }}
-                    tickFormatter={(value) => `${value.toFixed(3)}%`}
-                  />
+  dataKey="dateTime"
+  tickFormatter={(value) => new Date(value).toLocaleDateString()}
+  tick={{ fontSize: 12 }}  // Smaller font size for tick labels
+  label={{ 
+    value: 'Funding Rate (%/hour)', 
+    angle: -90, 
+    position: 'insideLeft',
+    fontSize: 14,  // Slightly larger font size for axis label
+    style: { textAnchor: 'middle' }  // Better vertical alignment
+  }}
+/>
+
+<YAxis 
+  tickFormatter={(value) => `${value.toFixed(4)}%`}
+  tick={{ fontSize: 12 }}  // Smaller font size for tick labels
+  label={{ 
+    value: 'Funding Rate (%/hour)', 
+    angle: -90, 
+    position: 'insideLeft',
+    fontSize: 14,  // Slightly larger font size for axis label
+    style: { textAnchor: 'middle' }  // Better vertical alignment
+  }}
+/>
                   <ChartTooltip 
                     content={({ active, payload, label }) => {
                       if (active && payload && payload.length) {

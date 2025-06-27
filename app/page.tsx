@@ -9,12 +9,13 @@ import {
   ArrowLeftRight,
   ChevronLeft
 } from 'lucide-react';
-import FundingRatesChart from '@/components/FundingRatesChart';
-import DriftFundingRatesChart from '@/components/DriftfundingRateChart';
+import FundingRatesChart from '@/components/HyperliquidFundingChart';
 import FundingArbitrageWithDetails from '@/components/Comparison';
-// import FundingComparison from '@/components/Test';
+import DriftFundingRatesChart from '@/components/DriftFundingChart';
+import ZkLighterMultiFundingChart from '@/components/LighterRateChart';
+import FundingArbitrageDashboard from '@/components/Arbitrage/ComparisonTable';
 
-
+// Rest of your code remains the same
 
 interface NavItem {
   id: string;
@@ -46,13 +47,20 @@ const navigationItems: NavItem[] = [
     component: <DriftFundingRatesChart/>,
     description: 'Drift historical funding rates'
   },
-  //   {
-  //   id: 'test',
-  //   label: 'test Charts',
-  //   icon: <Activity className="h-5 w-5" />,
-  //   component: <FundingComparison/>,
-  //   description: 'Drift historical funding rates'
-  // }
+  {
+    id: 'lighter',
+    label: 'Lighter Charts',
+    icon: <Activity className="h-5 w-5" />,
+    component: <ZkLighterMultiFundingChart/>,
+    description: 'Lighter historical funding rates'
+  },
+  {
+    id: 'comparison',
+    label: 'Comparison',
+    icon: <Activity className="h-5 w-5" />,
+    component: <FundingArbitrageDashboard/>,
+    description: 'Lighter historical funding rates'
+  }
 ];
 
 export default function FundingDashboard() {
@@ -137,7 +145,7 @@ export default function FundingDashboard() {
       </div>
 
       {/* Main Content */}
-      <div className="flex flex-col ">
+      <div className="flex-1 flex flex-col min-w-0">
         
         {/* Top Bar */}
         <header className="bg-white shadow-sm border-b border-gray-200 px-6 py-4">
