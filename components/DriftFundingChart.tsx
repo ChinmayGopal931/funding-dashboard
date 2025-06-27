@@ -112,12 +112,20 @@ async function fetchDriftFundingRates(marketSymbol: string): Promise<DriftFundin
   }
 }
 
+// Define time period options similar to LighterRateChart
+const TIME_PERIODS = [
+  { value: '24h', label: '24 Hours', hours: 24 },
+  { value: '7d', label: '7 Days', hours: 24 * 7 },
+  { value: '30d', label: '30 Days', hours: 24 * 30 },
+];
+
 function DriftFundingRatesChart() {
   const [data, setData] = useState<ProcessedDataPoint[]>([]);
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [availableMarkets, setAvailableMarkets] = useState<DriftContract[]>([]);
   const [selectedMarkets, setSelectedMarkets] = useState<string[]>([]);
+  const [timePeriod, setTimePeriod] = useState<typeof TIME_PERIODS[number]>(TIME_PERIODS[0]);
 
   const processMultiMarketData = (marketDataMap: Record<string, DriftFundingRate[]>): ProcessedDataPoint[] => {
     // Step 1: Process each market's data into a map
@@ -192,9 +200,15 @@ function DriftFundingRatesChart() {
 
     setLoading(true);
     try {
-      // Fetch data for selected markets in parallel
+      // Fetch data for selected markets in parallel for the specified time period
       const promises = selectedMarkets.map(market => 
-        fetchDriftFundingRates(market).then(data => ({ market, data }))
+        fetchDriftFundingRates(market).then(data => {
+          // Filter data based on the selected time period
+          const now = Date.now();
+          const cutoffTime = now - (timePeriod.hours * 60 * 60 * 1000);
+          const filteredData = data.filter(item => parseInt(item.ts) * 1000 >= cutoffTime);
+          return { market, data: filteredData };
+        })
       );
       
       const results = await Promise.all(promises);
@@ -240,7 +254,7 @@ function DriftFundingRatesChart() {
 
   useEffect(() => {
     fetchAllData();
-  }, [selectedMarkets]);
+  }, [selectedMarkets, timePeriod]);
 
   const generateColor = (tickerId: string) => {
     if (COLORS[tickerId]) return COLORS[tickerId];
@@ -295,6 +309,20 @@ function DriftFundingRatesChart() {
           <CardTitle className="flex items-center justify-between">
             Drift Protocol Funding Rates Analysis - Top 10 Markets
             <div className="flex items-center gap-2">
+              <select
+                value={timePeriod.value}
+                onChange={(e) => {
+                  const period = TIME_PERIODS.find(p => p.value === e.target.value) || TIME_PERIODS[0];
+                  setTimePeriod(period);
+                }}
+                className="text-sm border rounded-md p-1"
+              >
+                {TIME_PERIODS.map((period) => (
+                  <option key={period.value} value={period.value}>
+                    {period.label}
+                  </option>
+                ))}
+              </select>
               <Button 
                 onClick={fetchAllData} 
                 disabled={loading}
@@ -354,8 +382,20 @@ function DriftFundingRatesChart() {
                 <LineChart data={data}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-                    dataKey="dateTime"
-                    tickFormatter={(value) => new Date(value).toLocaleDateString()}
+                    dataKey="timestamp"
+                    tickFormatter={(timestamp) => {
+                      const date = new Date(timestamp);
+                      const dateStr = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+                      
+                      // Show time only for 24h time period
+                      if (timePeriod.value === '24h') {
+                        const hours = String(date.getHours()).padStart(2, '0');
+                        const minutes = String(date.getMinutes()).padStart(2, '0');
+                        return `${dateStr} ${hours}:${minutes}`;
+                      }
+                      
+                      return dateStr;
+                    }}
                   />
                   <YAxis 
                     label={{ value: 'Funding Rate (%/hour)', angle: -90, position: 'insideLeft' }}
