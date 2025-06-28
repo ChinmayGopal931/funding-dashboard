@@ -32,7 +32,7 @@ const navigationItems: NavItem[] = [
   // },
   {
     id: 'comparison',
-    label: 'Comparison',
+    label: 'Arbitrage Scanner',
     icon: <ArrowLeftRight className="h-5 w-5" />,
     component: <FundingArbitrageDashboard/>,
     description: 'Lighter historical funding rates'

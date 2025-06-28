@@ -136,9 +136,9 @@ const OpportunityRow = memo(({
     </td>
     <td className="px-4 py-3 text-sm">{opportunity.bestStrategy}</td>
     <td className="px-4 py-3 text-xs flex flex-wrap">
-      {opportunity.openInterestHyperliquid ? `H-${formatSmallOI(opportunity.openInterestHyperliquid)} ` : ''}
-      {opportunity.openInterestLighter ? `L-${formatSmallOI(opportunity.openInterestLighter)} ` : ''}
-      {opportunity.openInterestDrift ? `D-${formatSmallOI(opportunity.openInterestDrift)}` : ''}
+      {opportunity.openInterestHyperliquid ? `H-${formatSmallOI(opportunity.openInterestHyperliquid)}    ` : ''}
+      {opportunity.openInterestLighter ? `L-${formatSmallOI(opportunity.openInterestLighter)}     ` : ''}
+      {opportunity.openInterestDrift ? `D-${formatSmallOI(opportunity.openInterestDrift)}     ` : ''}
     </td>
     <td className="px-4 py-3">{opportunity.maxPriceDeviation.toFixed(3)}%</td>
   </tr>
