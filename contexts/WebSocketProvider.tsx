@@ -16,6 +16,7 @@ interface MarketStats {
   daily_price_low: number;
   daily_price_high: number;
   daily_price_change: number;
+  open_interest: string;
 }
 
 interface WebSocketContextType {

@@ -119,29 +119,29 @@ const OpportunityRow = memo(({
       <tr className="border-b hover:bg-blue-50 cursor-pointer transition-colors"
           onClick={() => onClick(opportunity)} 
       >    
-        <td className="px-4 py-3 font-medium">{opportunity.asset}</td>
-        <td className={`px-4 py-3 ${
+        <td className="pl-4 py-3 font-medium">{opportunity.asset}</td>
+        <td className={`pr-1 py-3 ${
           !opportunity.driftData.available ? "" :
           opportunity.driftData.rate > 0 ? "text-green-600" : 
           opportunity.driftData.rate < 0 ? "text-red-600" : ""
         }`}>
           {opportunity.driftData.available ? formatRate(opportunity.driftData.rate) : "-"}
         </td>
-        <td className={`px-4 py-3 ${
+        <td className={`px-1 py-3 ${
           !opportunity.hyperliquidData.available ? "" :
           opportunity.hyperliquidData.rate > 0 ? "text-green-600" : 
           opportunity.hyperliquidData.rate < 0 ? "text-red-600" : ""
         }`}>
           {opportunity.hyperliquidData.available ? formatRate(opportunity.hyperliquidData.rate) : "-"}
         </td>
-        <td className={`px-4 py-3 ${
+        <td className={`px-1 py-3 ${
           !opportunity.gmxData.available ? "" :
           opportunity.gmxData.rate > 0 ? "text-green-600" : 
           opportunity.gmxData.rate < 0 ? "text-red-600" : ""
         }`}>
           {opportunity.gmxData.available ? formatRate(opportunity.gmxData.rate) : "-"}
         </td>
-        <td className={`px-4 py-3 ${
+        <td className={`px-1 py-3 ${
           !opportunity.lighterData.available ? "" :
           opportunity.lighterData.rate > 0 ? "text-green-600" : 
           opportunity.lighterData.rate < 0 ? "text-red-600" : ""
@@ -164,10 +164,19 @@ const OpportunityRow = memo(({
           </div>
         </td>
         <td className="px-4 py-3 text-sm">{opportunity.bestStrategy}</td>
-        <td className="px-4 py-3 text-xs flex flex-wrap">
-          {opportunity.openInterestHyperliquid ? `H - ${formatSmallOI(opportunity.openInterestHyperliquid)}    ` : ''}
-          {opportunity.openInterestLighter ? `L - ${formatSmallOI(opportunity.openInterestLighter)}     ` : ''}
-          {opportunity.openInterestDrift ? `D - ${formatSmallOI(opportunity.openInterestDrift)}     ` : ''}
+        <td className="px-4 py-3 text-xs flex flex-col space-y-0.5">
+          {opportunity.openInterestHyperliquid ? (
+            <div className="whitespace-nowrap">H - {formatSmallOI(opportunity.openInterestHyperliquid)}</div>
+          ) : null}
+          {opportunity.openInterestLighter ? (
+            <div className="whitespace-nowrap">L - {formatSmallOI(opportunity.openInterestLighter)}</div>
+          ) : null}
+          {opportunity.openInterestDrift ? (
+            <div className="whitespace-nowrap">D - {formatSmallOI(opportunity.openInterestDrift)}</div>
+          ) : null}
+          {opportunity.gmxMarket?.openInterestLong && opportunity.gmxMarket?.openInterestShort ? (
+            <div className="whitespace-nowrap">G - {formatSmallOI((parseFloat(opportunity.gmxMarket.openInterestLong) + parseFloat(opportunity.gmxMarket.openInterestShort)) / 1e30)}</div>
+          ) : null}
         </td>
         <td className="px-4 py-3">{opportunity.maxPriceDeviation.toFixed(3)}%</td>
       </tr>
@@ -219,7 +228,7 @@ const OpportunityRow = memo(({
           <h4 className="font-medium text-sm mb-1">Lighter</h4>
           <ul className="space-y-0.5">
             <li>Funding: {formatRate(opportunity.lighterData.rate)}</li>
-            <li>OI: -</li>
+            <li>OI: {formatSmallOI(opportunity.openInterestLighter)}</li>
             <li>Index Px: {parseFloat(opportunity.lighterStats.index_price).toFixed(3)}</li>
             <li>24h Vol: {opportunity.lighterStats.daily_quote_token_volume.toLocaleString(undefined, { maximumFractionDigits: 0 })}</li>
           </ul>
@@ -247,6 +256,7 @@ export default function FundingArbitrageDashboard() {
 
   // Use the optimized WebSocket context
   const { isConnected: lighterWsConnected, marketData: lighterData, lastUpdateTime } = useWebSocket();
+
   // Fetch external data (Drift and Hyperliquid)
   const fetchExternalData = useCallback(async () => {
     try {
@@ -359,9 +369,16 @@ export default function FundingArbitrageDashboard() {
       
       const fundingRate = parseFloat(stats.current_funding_rate || stats.funding_rate || '0');
       
+      // Calculate open interest in USD terms (token OI * price)
+      const openInterestTokens = parseFloat(stats.open_interest || '0');
+      const openInterest =  openInterestTokens 
+
+      
       const opp = opportunityMap.get(asset);
       if (opp) {
         opp.lighterData = { rate: fundingRate / 10, available: true };
+        opp.openInterest += openInterest;
+        opp.openInterestLighter = openInterest;
         opp.lighterStats = stats as unknown as LighterStats;
       }
     });
@@ -370,7 +387,6 @@ export default function FundingArbitrageDashboard() {
     // Process GMX data
     externalData.gmx.forEach(market => {
       const symbol = market.name.split('/')[0].toUpperCase();
-
       const rateLong = gmxRate8h(market.netRateLong || market.fundingRateLong || '0');
       const rateShort = gmxRate8h(market.netRateShort || market.fundingRateShort || '0');
 
@@ -524,6 +540,7 @@ export default function FundingArbitrageDashboard() {
     );
   }
 
+  console.log(opportunities)
 
   return (
     <div className="w-full max-w-7xl mx-auto p-4 space-y-6">
