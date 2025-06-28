@@ -66,6 +66,29 @@ export const metadata: Metadata = {
       "max-snippet": -1,
     },
   },
+  alternates: {
+    canonical: "/",
+  },
+  themeColor: "#ffffff",
+};
+
+// Structured data for better SEO
+const structuredData = {
+  "@context": "https://schema.org",
+  "@type": "WebSite",
+  url: "https://dex-funding-dashboard.vercel.app",
+  name: "DEX Funding Rate Dashboard",
+  description:
+    "Cross-DEX funding rate analytics dashboard for DeFi traders and researchers",
+  potentialAction: {
+    "@type": "SearchAction",
+    target: {
+      "@type": "EntryPoint",
+      urlTemplate:
+        "https://dex-funding-dashboard.vercel.app/?search={search_term_string}",
+    },
+    "query-input": "required name=search_term_string",
+  },
 };
 
 export default function RootLayout({
@@ -79,6 +102,11 @@ export default function RootLayout({
         <WebSocketProvider>
           {children}
         </WebSocketProvider>
+        {/* JSON-LD structured data for enhanced SEO */}
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+        />
       </body>
     </html>
   );

@@ -35,7 +35,7 @@ const navigationItems: NavItem[] = [
     label: 'Arbitrage Scanner',
     icon: <ArrowLeftRight className="h-5 w-5" />,
     component: <FundingArbitrageDashboard/>,
-    description: 'Lighter historical funding rates'
+    description: 'Find cross-exchange arbitrage opportunities'
   },
   {
     id: 'hyperliquid',
