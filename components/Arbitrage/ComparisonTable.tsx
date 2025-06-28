@@ -606,7 +606,7 @@ export default function FundingArbitrageDashboard() {
                   <th className="px-4 py-3 text-left text-sm font-medium">
                     <TooltipProvider>
                       <TooltipComponent>
-                        <TooltipTrigger>Current APR</TooltipTrigger>
+                        <TooltipTrigger>Optimal APR</TooltipTrigger>
                         <TooltipContent>Annualized return from spread</TooltipContent>
                       </TooltipComponent>
                     </TooltipProvider>
