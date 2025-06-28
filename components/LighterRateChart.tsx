@@ -301,8 +301,20 @@ export default function ZkLighterMultiFundingChart() {
                 <LineChart data={data}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-                    dataKey="dateTime"
-                    tickFormatter={(value) => new Date(value).toLocaleDateString()}
+                    dataKey="timestamp"
+                    tickFormatter={(timestamp) => {
+                      const date = new Date(timestamp);
+                      const dateStr = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+                      
+                      // Show time only for 24h chart
+                      if (timePeriod.value === '24h') {
+                        const hours = String(date.getHours()).padStart(2, '0');
+                        const minutes = String(date.getMinutes()).padStart(2, '0');
+                        return `${dateStr} ${hours}:${minutes}`;
+                      }
+                      
+                      return dateStr;
+                    }}
                   />
                   <YAxis 
                     label={{ value: 'Funding Rate (%)', angle: -90, position: 'insideLeft' }}

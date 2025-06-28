@@ -186,12 +186,12 @@ function FundingRatesChart() {
                 onChange={(e) => setTimeRange(Number(e.target.value))}
                 className="px-3 py-1 border rounded-md text-sm"
               >
-                <option value={1}>1 day</option>
-                <option value={3}>3 days</option>
-                <option value={7}>7 days</option>
-                <option value={14}>14 days</option>
-                <option value={30}>30 days</option>
-                <option value={180}>180 days</option>
+                <option value={1}>24 Hours</option>
+                <option value={3}>3 Days</option>
+                <option value={7}>7 Days</option>
+                <option value={14}>14 Days</option>
+                <option value={30}>30 Days</option>
+                <option value={180}>180 Days</option>
               </select>
               <Button 
                 onClick={fetchAllData} 
@@ -224,16 +224,21 @@ function FundingRatesChart() {
                 <LineChart data={data}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-  dataKey="dateTime"
-  tickFormatter={(value) => new Date(value).toLocaleDateString()}
-  tick={{ fontSize: 12 }}  // Smaller font size for tick labels
-  label={{ 
-    value: 'Funding Rate (%/hour)', 
-    angle: -90, 
-    position: 'insideLeft',
-    fontSize: 14,  // Slightly larger font size for axis label
-    style: { textAnchor: 'middle' }  // Better vertical alignment
+  dataKey="timestamp"
+  tickFormatter={(timestamp) => {
+    const date = new Date(timestamp);
+    const dateStr = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+    
+    // Show time for 1-day timeRange
+    if (timeRange === 1) {
+      const hours = String(date.getHours()).padStart(2, '0');
+      const minutes = String(date.getMinutes()).padStart(2, '0');
+      return `${dateStr} ${hours}:${minutes}`;
+    }
+    
+    return dateStr;
   }}
+  tick={{ fontSize: 12 }}  // Smaller font size for tick labels
 />
 
 <YAxis 
