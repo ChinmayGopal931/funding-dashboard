@@ -296,6 +296,7 @@ export default function FundingArbitrageDashboard() {
       const symbol = market.name.split('/')[0].toUpperCase();
       allAssets.add(symbol);
     });
+    
 
     // Initialize opportunities for all assets
     allAssets.forEach(asset => {
@@ -364,6 +365,7 @@ export default function FundingArbitrageDashboard() {
         opp.lighterStats = stats as unknown as LighterStats;
       }
     });
+
 
     // Process GMX data
     externalData.gmx.forEach(market => {
@@ -521,6 +523,10 @@ export default function FundingArbitrageDashboard() {
       />
     );
   }
+
+
+  console.log(externalData, opportunities)
+
 
   return (
     <div className="w-full max-w-7xl mx-auto p-4 space-y-6">

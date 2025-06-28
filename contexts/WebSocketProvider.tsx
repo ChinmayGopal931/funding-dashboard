@@ -53,13 +53,16 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
   const flushUpdates = useCallback(() => {
     if (updateBuffer.current.size === 0) return;
     setMarketDataState(prev => {
-      const newData = new Map(prev.data);
+      // 💡  mutate the existing Map so the reference stays stable
+      const data = prev.data;
       updateBuffer.current.forEach((stats, marketId) => {
-        newData.set(marketId, stats);
+        data.set(marketId, stats);
       });
+      // clear buffer for next round
       updateBuffer.current.clear();
+      // only lastUpdate changes – Map reference remains the same
       return {
-        data: newData,
+        data,
         lastUpdate: Date.now()
       };
     });
@@ -90,7 +93,7 @@ export const WebSocketProvider = ({ children }: { children: ReactNode }) => {
     }
     
     // Schedule batch update (debounce)
-    updateTimeout.current = setTimeout(flushUpdates, 100); // 100ms debounce
+    updateTimeout.current = setTimeout(flushUpdates, 500); // ⏱️ debounce widened from 100 ms → 500 ms
   }, [flushUpdates]);
 
   const connect = useCallback((): void => {
@@ -222,4 +225,3 @@ export const useMarketData = (marketId: number): MarketStats | undefined => {
   
   return marketData.get(marketId);
 };
-
