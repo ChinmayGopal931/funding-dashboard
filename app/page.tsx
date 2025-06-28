@@ -11,6 +11,7 @@ import FundingRatesChart from '@/components/HyperliquidFundingChart';
 import DriftFundingRatesChart from '@/components/DriftFundingChart';
 import ZkLighterMultiFundingChart from '@/components/LighterRateChart';
 import FundingArbitrageDashboard from '@/components/Arbitrage/ComparisonTable';
+import ParadexFundingChart from '@/components/ParadexFundingChart';
 
 // Rest of your code remains the same
 
@@ -57,6 +58,13 @@ const navigationItems: NavItem[] = [
     icon: <img src="/assets/lighter-color.svg" alt="Lighter" className="h-5 w-5" />,
     component: <ZkLighterMultiFundingChart/>,
     description: 'Lighter historical funding rates'
+  },
+  {
+    id: 'paradex',
+    label: 'Paradex Charts',
+    icon: <img src="/assets/paradex.svg" alt="Paradex" className="h-5 w-5" />,
+    component: <ParadexFundingChart/>,
+    description: 'Paradex historical funding rates'
   },
 
 ];

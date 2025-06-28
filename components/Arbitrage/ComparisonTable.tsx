@@ -9,7 +9,7 @@ import { Tooltip as TooltipComponent, TooltipContent, TooltipProvider, TooltipTr
 import { Badge } from '@/components/ui/badge';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import { useWebSocket } from '@/contexts/WebSocketProvider';
-import { fetchDriftContracts, fetchHyperliquidData, fetchGMXMarkets, LIGHTER_MARKET_IDS, GMXMarket, gmxRate8h } from '@/lib/utils';
+import { fetchDriftContracts, fetchHyperliquidData, fetchGMXMarkets, LIGHTER_MARKET_IDS, GMXMarket, gmxRate8h, ParadexMarket, fetchParadexMarkets } from '@/lib/utils';
 import HistoricalAnalysis from './HistoricalAnalysis';
 
 // Interfaces
@@ -80,6 +80,7 @@ interface ArbitrageOpportunity {
   hyperliquidData: PlatformData;
   lighterData: PlatformData;
   gmxData: PlatformData;
+  paradexData: PlatformData; // Add this
   maxSpread: number;
   currentAPR: number;
   bestStrategy: string;
@@ -87,7 +88,9 @@ interface ArbitrageOpportunity {
   openInterestDrift: number;
   openInterestHyperliquid: number;
   openInterestLighter: number;
+  openInterestParadex: number; // Add this
   gmxMarket?: GMXMarket;
+  paradexMarket?: ParadexMarket; // Add this
   maxPriceDeviation: number;
   driftContract?: DriftContract;
   hyperliquidContext?: HyperliquidAssetContext;
@@ -98,6 +101,7 @@ interface ExternalData {
   drift: DriftContract[];
   hyperliquid: { assets: HyperliquidAsset[], contexts: HyperliquidAssetContext[] };
   gmx: GMXMarket[];
+  paradex: ParadexMarket[]; // Add this
 }
 
 // Memoized table row component
@@ -148,6 +152,13 @@ const OpportunityRow = memo(({
         }`}>
           {opportunity.lighterData.available ? formatRate(opportunity.lighterData.rate) : "-"}
         </td>
+        <td className={`px-1 py-3 ${
+          !opportunity.paradexData.available ? "" :
+          opportunity.paradexData.rate > 0 ? "text-green-600" : 
+          opportunity.paradexData.rate < 0 ? "text-red-600" : ""
+        }`}>
+          {opportunity.paradexData.available ? formatRate(opportunity.paradexData.rate) : "-"}
+        </td>
         <td className="px-4 py-3">
           <Badge variant={opportunity.maxSpread > 0.001 ? "default" : "secondary"}>
             {formatRate(opportunity.maxSpread)}
@@ -177,8 +188,11 @@ const OpportunityRow = memo(({
           {opportunity.gmxMarket?.openInterestLong && opportunity.gmxMarket?.openInterestShort ? (
             <div className="whitespace-nowrap">G - {formatSmallOI((parseFloat(opportunity.gmxMarket.openInterestLong) + parseFloat(opportunity.gmxMarket.openInterestShort)) / 1e30)}</div>
           ) : null}
+          {opportunity.openInterestParadex ? (
+            <div className="whitespace-nowrap">P - {formatSmallOI(opportunity.openInterestParadex)}</div>
+          ) : null}
         </td>
-        <td className="px-4 py-3">{opportunity.maxPriceDeviation.toFixed(3)}%</td>
+        {/* <td className="px-4 py-3">{opportunity.maxPriceDeviation.toFixed(3)}%</td> */}
       </tr>
     </HoverCardTrigger>
     <HoverCardContent className="w-80 text-xs space-y-3 p-4 border shadow-lg rounded-md bg-popover text-popover-foreground dark:bg-zinc-900 dark:text-zinc-100">
@@ -234,6 +248,17 @@ const OpportunityRow = memo(({
           </ul>
         </div>
       )}
+      {opportunity.paradexMarket && (
+        <div>
+          <h4 className="font-medium text-sm mb-1">Paradex</h4>
+          <ul className="space-y-0.5">
+            <li>Funding: {formatRate(opportunity.paradexData.rate)}</li>
+            <li>OI: {formatSmallOI(opportunity.openInterestParadex)}</li>
+            <li>Underlying Px: {parseFloat(opportunity.paradexMarket.underlying_price).toFixed(3)}</li>
+            <li>24h Vol: {parseFloat(opportunity.paradexMarket.volume_24h).toLocaleString(undefined, { maximumFractionDigits: 0 })}</li>
+          </ul>
+        </div>
+      )}
       <div className="pt-2 text-[11px] italic text-muted-foreground">Click row to view historical data</div>
     </HoverCardContent>
   </HoverCard>
@@ -247,7 +272,8 @@ export default function FundingArbitrageDashboard() {
   const [externalData, setExternalData] = useState<ExternalData>({
     drift: [],
     hyperliquid: { assets: [], contexts: [] },
-    gmx: []
+    gmx: [],
+    paradex: []
   });
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -261,16 +287,18 @@ export default function FundingArbitrageDashboard() {
   const fetchExternalData = useCallback(async () => {
     try {
       setError(null);
-      const [driftContracts, hyperliquidData, gmxMarkets] = await Promise.all([
+      const [driftContracts, hyperliquidData, gmxMarkets, paradexMarkets] = await Promise.all([
         fetchDriftContracts(),
         fetchHyperliquidData(),
-        fetchGMXMarkets()
+        fetchGMXMarkets(),
+        fetchParadexMarkets() // Add this
       ]);
       
       setExternalData({
         drift: driftContracts,
         hyperliquid: hyperliquidData,
-        gmx: gmxMarkets
+        gmx: gmxMarkets,
+        paradex: paradexMarkets // Add this
       });
       setLastUpdate(new Date());
     } catch (error) {
@@ -280,8 +308,8 @@ export default function FundingArbitrageDashboard() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [fetchDriftContracts, fetchHyperliquidData, fetchGMXMarkets]);
-
+  }, []);
+  
   // Calculate opportunities - memoized based on data dependencies
   const opportunities = useMemo(() => {
     const opportunityMap = new Map<string, ArbitrageOpportunity>();
@@ -306,7 +334,15 @@ export default function FundingArbitrageDashboard() {
       const symbol = market.name.split('/')[0].toUpperCase();
       allAssets.add(symbol);
     });
-    
+
+    externalData.paradex.forEach(market => {
+      const symbol = market.symbol.split('-')[0].toUpperCase();
+      // Handle special cases like kBONK -> 1000BONK
+      const asset = symbol.startsWith('K') && ['BONK', 'PEPE', 'FLOKI', 'SHIB'].includes(symbol.slice(1)) 
+        ? `1000${symbol.slice(1)}` 
+        : symbol;
+      allAssets.add(asset);
+    });
 
     // Initialize opportunities for all assets
     allAssets.forEach(asset => {
@@ -316,6 +352,7 @@ export default function FundingArbitrageDashboard() {
         hyperliquidData: { rate: 0, available: false },
         lighterData: { rate: 0, available: false },
         gmxData: { rate: 0, available: false },
+        paradexData: { rate: 0, available: false }, // Add this
         maxSpread: 0,
         currentAPR: 0,
         bestStrategy: '',
@@ -323,11 +360,13 @@ export default function FundingArbitrageDashboard() {
         openInterestDrift: 0,
         openInterestHyperliquid: 0,
         openInterestLighter: 0,
+        openInterestParadex: 0, // Add this
         maxPriceDeviation: 0,
         driftContract: undefined,
         hyperliquidContext: undefined,
         lighterStats: undefined,
         gmxMarket: undefined,
+        paradexMarket: undefined, // Add this
       });
     });
 
@@ -383,7 +422,24 @@ export default function FundingArbitrageDashboard() {
       }
     });
 
-
+    externalData.paradex.forEach(market => {
+      const symbol = market.symbol.split('-')[0].toUpperCase();
+      // Handle special cases like kBONK -> 1000BONK
+      const asset = symbol.startsWith('K') && ['BONK', 'PEPE', 'FLOKI', 'SHIB'].includes(symbol.slice(1)) 
+        ? `1000${symbol.slice(1)}` 
+        : symbol;
+      
+      const fundingRate = parseFloat(market.funding_rate || '0'); // Already in decimal format
+      const openInterest = parseFloat(market.open_interest || '0') * parseFloat(market.underlying_price || '0');
+      
+      const opp = opportunityMap.get(asset);
+      if (opp) {
+        opp.paradexData = { rate: fundingRate, available: true };
+        opp.openInterest += openInterest;
+        opp.openInterestParadex = openInterest;
+        opp.paradexMarket = market;
+      }
+    });
     // Process GMX data
     externalData.gmx.forEach(market => {
       const symbol = market.name.split('/')[0].toUpperCase();
@@ -411,7 +467,10 @@ export default function FundingArbitrageDashboard() {
       if (opp.driftData.available) {
         availablePlatforms.push({ name: 'Drift', rate: opp.driftData.rate });
       }
-      
+
+      if (opp.paradexData.available) {
+        availablePlatforms.push({ name: 'Paradex', rate: opp.paradexData.rate });
+      }
       if (opp.hyperliquidData.available) {
         availablePlatforms.push({ name: 'Hyperliquid', rate: opp.hyperliquidData.rate });
       }
@@ -487,8 +546,7 @@ export default function FundingArbitrageDashboard() {
 
     // Filter out opportunities with no available platforms (except spot) and sort by APR
     const opportunitiesArray = Array.from(opportunityMap.values())
-      .filter(opp => opp.driftData.available || opp.hyperliquidData.available || opp.gmxData.available || opp.lighterData.available)
-      .sort((a, b) => b.currentAPR - a.currentAPR);
+    .filter(opp => opp.driftData.available || opp.hyperliquidData.available || opp.gmxData.available || opp.lighterData.available || opp.paradexData.available)      .sort((a, b) => b.currentAPR - a.currentAPR);
     
     return opportunitiesArray;
   }, [externalData, lighterData, lastUpdateTime]);
@@ -546,9 +604,9 @@ export default function FundingArbitrageDashboard() {
         <CardHeader>
           <div className="flex justify-between items-center">
             <div>
-              <CardTitle className="text-2xl">Funding Rate Arbitrage Dashboard</CardTitle>
+              <CardTitle className="text-2xl">Funding Rate Comparison</CardTitle>
               <CardDescription>
-                Delta-neutral strategies across Drift, Hyperliquid, GMX, and Lighter
+                Delta-neutral strategies across Drift, Hyperliquid, GMX, Lighter and Paradex
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -620,6 +678,14 @@ export default function FundingArbitrageDashboard() {
                       </TooltipComponent>
                     </TooltipProvider>
                   </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">
+                    <TooltipProvider>
+                      <TooltipComponent>
+                        <TooltipTrigger>Paradex Rate</TooltipTrigger>
+                        <TooltipContent>8-hour funding rate</TooltipContent>
+                      </TooltipComponent>
+                    </TooltipProvider>
+                  </th>
                   <th className="px-4 py-3 text-left text-sm font-medium">Max Spread</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">
                     <TooltipProvider>
@@ -631,14 +697,14 @@ export default function FundingArbitrageDashboard() {
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium">Best Strategy</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">Open Interest</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium">
+                  {/* <th className="px-4 py-3 text-left text-sm font-medium">
                     <TooltipProvider>
                       <TooltipComponent>
                         <TooltipTrigger>Max Deviation</TooltipTrigger>
                         <TooltipContent>Estimated max price impact</TooltipContent>
                       </TooltipComponent>
                     </TooltipProvider>
-                  </th>
+                  </th> */}
                 </tr>
               </thead>
               <tbody>

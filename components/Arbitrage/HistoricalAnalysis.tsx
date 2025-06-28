@@ -16,6 +16,7 @@ interface ArbitrageOpportunity {
   hyperliquidData: { rate: number; available: boolean };
   lighterData: { rate: number; available: boolean };
   gmxData: { rate: number; available: boolean };
+  paradexData?: { rate: number; available: boolean };
   maxSpread: number;
   currentAPR: number;
   bestStrategy: string;
@@ -36,6 +37,7 @@ interface FundingDataPoint {
   hyperliquid?: number;
   lighter?: number;
   gmx?: number;
+  paradex?: number;
   spot: number;
   spread?: number;
 }
@@ -45,6 +47,20 @@ interface CumulativeDataPoint {
   date: string;
   cumulativeReturn: number;
   hourlyReturn: number;
+}
+
+interface ParadexFundingDataPoint {
+  market: string;
+  funding_index: string;
+  funding_premium: string;
+  funding_rate: string;
+  created_at: number;
+}
+
+interface ParadexFundingResponse {
+  next: string | null;
+  prev: string | null;
+  results: ParadexFundingDataPoint[];
 }
 
 // API Functions
@@ -158,6 +174,66 @@ async function fetchGMXHistoricalRates(asset: string, days: number): Promise<Fun
   return [];
 }
 
+async function fetchParadexHistoricalRates(asset: string, days: number): Promise<FundingDataPoint[]> {
+  const market = `${asset}-USD-PERP`;
+  const endTime = Date.now();
+  const startTime = endTime - (days * 24 * 60 * 60 * 1000);
+  
+  try {
+    const allData: ParadexFundingDataPoint[] = [];
+    let cursor: string | null = null;
+    const pageSize = 5000; // Max allowed
+    
+    do {
+      const params = new URLSearchParams({
+        market,
+        page_size: pageSize.toString(),
+        start_at: startTime.toString(),
+        end_at: endTime.toString(),
+      });
+      
+      if (cursor) params.append('cursor', cursor);
+      
+      const response = await fetch(
+        `https://api.prod.paradex.trade/v1/funding/data?${params}`,
+        { headers: { 'Accept': 'application/json' } }
+      );
+      
+      if (!response.ok) {
+        console.error(`Paradex API error: ${response.status}`);
+        break;
+      }
+      
+      const data: ParadexFundingResponse = await response.json();
+      allData.push(...(data.results || []));
+      
+      cursor = data.next;
+      
+      // Stop if we have enough data for the time range
+      const maxDataPoints = days * 24 * 12; // Assuming 5-minute intervals
+      if (allData.length > maxDataPoints) break;
+      
+    } while (cursor);
+    
+    // Convert to the expected format
+    return allData.map(entry => {
+      // Convert funding rate to hourly percentage
+      // Paradex rates are per 8 hours, so divide by 8 to get hourly
+      const hourlyRate = parseFloat(entry.funding_rate) * 100 / 8;
+      
+      return {
+        timestamp: entry.created_at,
+        date: new Date(entry.created_at).toLocaleString(),
+        paradex: hourlyRate,
+        spot: 0
+      };
+    });
+  } catch (error) {
+    console.error('Error fetching Paradex rates:', error);
+    return [];
+  }
+}
+
 // Custom tooltip component
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
@@ -190,6 +266,7 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
     if (strategy.includes('Hyperliquid')) platforms.push('hyperliquid');
     if (strategy.includes('Lighter')) platforms.push('lighter');
     if (strategy.includes('GMX')) platforms.push('gmx');
+    if (strategy.includes('Paradex')) platforms.push('paradex');
     if (strategy.includes('Spot')) platforms.push('spot');
     
     return platforms;
@@ -248,8 +325,11 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
           promises.push(fetchGMXHistoricalRates(opportunity.asset, days));
         }
         
+        if (strategyPlatforms.includes('paradex')) {
+          promises.push(fetchParadexHistoricalRates(opportunity.asset, days));
+        }
+        
         const results = await Promise.all(promises);
-
 
         // Merge all data points by timestamp
         const dataMap = new Map<number, FundingDataPoint>();
@@ -288,9 +368,13 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
             } else {
               const rate = point[platform as keyof FundingDataPoint] as number;
               // If a required platform (GMX) has no data, mark as incomplete
-              if (platform === 'gmx' && rate === undefined) {
-                hasRequiredData = false;
-                return;
+              if ((platform === 'gmx' || platform === 'paradex') && rate === undefined) {
+                // Only mark as incomplete if this platform is critical to the strategy
+                const platformCount = Object.keys(platformPositions).length;
+                if (platformCount <= 2) {
+                  hasRequiredData = false;
+                  return;
+                }
               }
               if (rate !== undefined) {
                 if (position === 'long') {
@@ -308,7 +392,7 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
             // When positive, we earn from the spread
             point.spread = shortRate - longRate;
           } else {
-            // Don't calculate spread if GMX data is missing
+            // Don't calculate spread if critical data is missing
             point.spread = undefined;
           }
         });
@@ -333,7 +417,7 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
     const performanceData: CumulativeDataPoint[] = [];
     
     fundingData.forEach(point => {
-      // Skip points where spread couldn't be calculated (e.g., missing GMX data)
+      // Skip points where spread couldn't be calculated (e.g., missing critical data)
       if (point.spread === undefined) return;
       
       const hourlyReturn = point.spread || 0;
@@ -354,12 +438,23 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
   const chartColors = {
     drift: '#ec4899', // Pink
     hyperliquid: '#8b5cf6', // Purple
-    lighter: '#10b981',
+    lighter: '#10b981', // Green
     gmx: '#3b82f6', // Blue
-    spot: '#6b7280',
+    paradex: '#f59e0b', // Amber
+    spot: '#6b7280', // Gray
     spread: '#f59e0b',
     cumulative: '#ef4444'
   };
+
+  const unavailablePlatforms = strategyPlatforms.filter(platform => 
+    (platform === 'gmx') || 
+    (platform === 'paradex' && !opportunity.paradexData?.available)
+  );
+
+  const canCalculatePerformance = !(
+    unavailablePlatforms.length > 0 && 
+    Object.keys(platformPositions).length <= 2
+  );
 
   return (
     <div className="w-full max-w-7xl mx-auto p-4 space-y-6">
@@ -392,14 +487,14 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
             </Alert>
           )}
           
-          {strategyPlatforms.includes('gmx') && (
+          {unavailablePlatforms.length > 0 && (
             <Alert className="mb-4">
               <AlertCircle className="h-4 w-4" />
               <AlertDescription>
-                Note: GMX historical funding rate data is not available via API. 
-                {Object.keys(platformPositions).length <= 2 
+                Note: {unavailablePlatforms.map(p => p.toUpperCase()).join(', ')} historical funding rate data is not available via API. 
+                {!canCalculatePerformance 
                   ? " Performance metrics cannot be calculated for this strategy."
-                  : " GMX data is excluded from historical calculations."}
+                  : ` ${unavailablePlatforms.map(p => p.toUpperCase()).join(', ')} data is excluded from historical calculations.`}
               </AlertDescription>
             </Alert>
           )}
@@ -502,6 +597,18 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
                             />
                           )}
                           
+                          {strategyPlatforms.includes('paradex') && (
+                            <Line 
+                              type="monotone" 
+                              dataKey="paradex" 
+                              stroke={chartColors.paradex}
+                              name={`Paradex (${platformPositions.paradex})`}
+                              strokeWidth={1}
+                              dot={false}
+                              connectNulls
+                            />
+                          )}
+                          
                           {strategyPlatforms.includes('spot') && (
                             <Line 
                               type="monotone" 
@@ -521,11 +628,11 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
                 )}
                   
                   {/* Cumulative Strategy Performance Chart */}
-                  {strategyPlatforms.includes('gmx') && Object.keys(platformPositions).length <= 2 ? (
+                  {!canCalculatePerformance ? (
                     <div className="text-center py-12 border rounded-lg bg-muted/10">
                       <AlertCircle className="h-8 w-8 mx-auto mb-4 text-muted-foreground" />
                       <p className="text-muted-foreground">
-                        Historical performance cannot be calculated because GMX does not provide historical funding rate data.
+                        Historical performance cannot be calculated because {unavailablePlatforms.map(p => p.toUpperCase()).join(', ')} {unavailablePlatforms.length > 1 ? 'do' : 'does'} not provide historical funding rate data.
                       </p>
                     </div>
                   ) : (
@@ -571,7 +678,7 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
                   )}
                   
                   {/* Summary Statistics */}
-                  {!(strategyPlatforms.includes('gmx') && Object.keys(platformPositions).length <= 2) && (
+                  {canCalculatePerformance && (
                     <div className="mt-6 p-4 bg-muted rounded-lg">
                       <h3 className="font-semibold mb-2">Performance Summary</h3>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">

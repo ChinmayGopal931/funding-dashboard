@@ -7,8 +7,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-// Add these interfaces and functions to your utils file (lib/utils.ts)
-
 // Interfaces for historical funding data
 export interface DriftFundingRate {
   ts: number | string; // Can be Unix timestamp or string
@@ -27,6 +25,21 @@ export interface DriftFundingRate {
   baseAssetAmountWithAmm: string;
   baseAssetAmountWithUnsettledLp: string;
 }
+
+export interface ParadexMarket {
+  symbol: string;
+  mark_price: string;
+  last_traded_price: string;
+  bid: string;
+  ask: string;
+  volume_24h: string;
+  underlying_price: string;
+  open_interest: string;
+  funding_rate: string;
+  price_change_rate_24h: string;
+}
+
+
 
 export interface HyperliquidFundingEntry {
   coin: string;
@@ -54,6 +67,27 @@ export const fetchDriftFundingHistory = async (marketSymbol: string): Promise<Dr
     return [];
   }
 };
+
+// Fetch Paradex markets
+export const fetchParadexMarkets = async (): Promise<ParadexMarket[]> => {
+  try {
+    const response = await fetch('https://api.prod.paradex.trade/v1/markets/summary?market=ALL', {
+      headers: { 'Accept': 'application/json' }
+    });
+    
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const data = await response.json();
+    
+    // Filter only perpetual markets (ending with -USD-PERP)
+    return (data.results || []).filter((market: ParadexMarket) => 
+      market.symbol.endsWith('-USD-PERP')
+    );
+  } catch (error) {
+    console.error('Error fetching Paradex markets:', error);
+    return [];
+  }
+};
+
 
 export const fetchHyperliquidFundingHistory = async (coin: string, startTime: number, endTime: number): Promise<HyperliquidFundingEntry[]> => {
   try {
@@ -219,6 +253,107 @@ const BASE_COLORS: Record<string, string> = {
   RNDR: "#4ecdc4",
   AVAX: "#45b7d1",
 };
+
+export const ParadexPerpMarkets: string[] = [
+  "MORPHO-USD-PERP",
+  "MUBARAK-USD-PERP",
+  "WCT-USD-PERP",
+  "AVAX-USD-PERP",
+  "SUI-USD-PERP",
+  "LAYER-USD-PERP",
+  "BTC-USD-PERP",
+  "BNB-USD-PERP",
+  "MOODENG-USD-PERP",
+  "WIF-USD-PERP",
+  "POPCAT-USD-PERP",
+  "MELANIA-USD-PERP",
+  "XMR-USD-PERP",
+  "RED-USD-PERP",
+  "BCH-USD-PERP",
+  "PENGU-USD-PERP",
+  "SPX-USD-PERP",
+  "UNI-USD-PERP",
+  "RESOLV-USD-PERP",
+  "APT-USD-PERP",
+  "ZRO-USD-PERP",
+  "BMT-USD-PERP",
+  "DYDX-USD-PERP",
+  "JUP-USD-PERP",
+  "TST-USD-PERP",
+  "ONDO-USD-PERP",
+  "PYTH-USD-PERP",
+  "SEI-USD-PERP",
+  "NEAR-USD-PERP",
+  "RAY-USD-PERP",
+  "kBONK-USD-PERP",
+  "TRUMP-USD-PERP",
+  "BERA-USD-PERP",
+  "NIL-USD-PERP",
+  "NEWT-USD-PERP",
+  "kPEPE-USD-PERP",
+  "SYRUP-USD-PERP",
+  "ENA-USD-PERP",
+  "OM-USD-PERP",
+  "GRASS-USD-PERP",
+  "PNUT-USD-PERP",
+  "EIGEN-USD-PERP",
+  "USUAL-USD-PERP",
+  "TRB-USD-PERP",
+  "WAL-USD-PERP",
+  "ETHFI-USD-PERP",
+  "SCR-USD-PERP",
+  "LINK-USD-PERP",
+  "ETH-USD-PERP",
+  "XRP-USD-PERP",
+  "FIL-USD-PERP",
+  "WLD-USD-PERP",
+  "NEIRO-USD-PERP",
+  "TON-USD-PERP",
+  "FARTCOIN-USD-PERP",
+  "S-USD-PERP",
+  "PLUME-USD-PERP",
+  "kFLOKI-USD-PERP",
+  "VINE-USD-PERP",
+  "FLOW-USD-PERP",
+  "KAITO-USD-PERP",
+  "LTC-USD-PERP",
+  "COOKIE-USD-PERP",
+  "VVV-USD-PERP",
+  "DOT-USD-PERP",
+  "HYPER-USD-PERP",
+  "INJ-USD-PERP",
+  "ZORA-USD-PERP",
+  "TRX-USD-PERP",
+  "ADA-USD-PERP",
+  "AIXBT-USD-PERP",
+  "PENDLE-USD-PERP",
+  "GOAT-USD-PERP",
+  "IP-USD-PERP",
+  "TIA-USD-PERP",
+  "LDO-USD-PERP",
+  "SOL-USD-PERP",
+  "HYPE-USD-PERP",
+  "INIT-USD-PERP",
+  "ORDI-USD-PERP",
+  "RUNE-USD-PERP",
+  "DOGE-USD-PERP",
+  "OP-USD-PERP",
+  "XLM-USD-PERP",
+  "HUMA-USD-PERP",
+  "ALCH-USD-PERP",
+  "JTO-USD-PERP",
+  "TAO-USD-PERP",
+  "VIRTUAL-USD-PERP",
+  "STRK-USD-PERP",
+  "ARB-USD-PERP",
+  "AI16Z-USD-PERP",
+  "SOPH-USD-PERP",
+  "PAXG-USD-PERP",
+  "MOVE-USD-PERP",
+  "kSHIB-USD-PERP",
+  "AAVE-USD-PERP",
+  "MKR-USD-PERP"
+];
 
 // GMX Market interface and fetch function
 export interface GMXMarket {
