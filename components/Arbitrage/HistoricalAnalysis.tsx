@@ -134,12 +134,15 @@ async function fetchLighterHistoricalRates(marketId: number, days: number): Prom
     
     const data = await response.json();
     const fundings = data.fundings || [];
+
+    console.log("fundings", fundings)
     
     return fundings.map((funding: any) => ({
       timestamp: funding.timestamp * 1000, // Convert to milliseconds
       date: new Date(funding.timestamp * 1000).toLocaleString(),
       // Convert to percentage and adjust by dividing by 10 per new requirement
-      lighter: parseFloat(funding.rate) * 10,
+      lighter: parseFloat(funding.rate) * 10 *
+      (funding.direction === 'short' ? -1 : 1),
       spot: 0
     }));
   } catch (error) {
@@ -234,6 +237,8 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
         }
         
         const results = await Promise.all(promises);
+
+        console.log("resultss", results)
 
         // Merge all data points by timestamp
         const dataMap = new Map<number, FundingDataPoint>();

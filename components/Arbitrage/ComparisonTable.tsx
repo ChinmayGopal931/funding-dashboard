@@ -7,6 +7,7 @@ import { Loader2, RefreshCw, AlertCircle, Info } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tooltip as TooltipComponent, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
+import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import { useWebSocket } from '@/contexts/WebSocketProvider';
 import { fetchDriftContracts, fetchHyperliquidData, LIGHTER_MARKET_IDS } from '@/lib/utils';
 import HistoricalAnalysis from './HistoricalAnalysis';
@@ -53,6 +54,21 @@ interface HyperliquidAssetContext {
   prevDayPx: string;
 }
 
+interface LighterStats {
+  market_id: number;
+  index_price: string;
+  mark_price: string;
+  last_trade_price: string;
+  current_funding_rate: string;
+  funding_rate: string;
+  funding_timestamp: number;
+  daily_base_token_volume: number;
+  daily_quote_token_volume: number;
+  daily_price_low: number;
+  daily_price_high: number;
+  daily_price_change: number;
+}
+
 interface PlatformData {
   rate: number;
   available: boolean;
@@ -66,13 +82,14 @@ interface ArbitrageOpportunity {
   maxSpread: number;
   currentAPR: number;
   bestStrategy: string;
-  // Aggregate OI (kept for any existing usage)
   openInterest: number;
-  // Per-protocol open interest
   openInterestDrift: number;
   openInterestHyperliquid: number;
   openInterestLighter: number;
   maxPriceDeviation: number;
+  driftContract?: DriftContract;
+  hyperliquidContext?: HyperliquidAssetContext;
+  lighterStats?: LighterStats;
 }
 
 interface ExternalData {
@@ -94,54 +111,94 @@ const OpportunityRow = memo(({
   formatSmallOI: (oi: number) => string;
   onClick: (opportunity: ArbitrageOpportunity) => void;
 }) => (
-<tr className="border-b hover:bg-muted/50 cursor-pointer transition-colors"
-        onClick={() => onClick(opportunity)} 
-    >    
-    <td className="px-4 py-3 font-medium">{opportunity.asset}</td>
-    <td className={`px-4 py-3 ${
-      !opportunity.driftData.available ? "" :
-      opportunity.driftData.rate > 0 ? "text-green-600" : 
-      opportunity.driftData.rate < 0 ? "text-red-600" : ""
-    }`}>
-      {opportunity.driftData.available ? formatRate(opportunity.driftData.rate) : "-"}
-    </td>
-    <td className={`px-4 py-3 ${
-      !opportunity.hyperliquidData.available ? "" :
-      opportunity.hyperliquidData.rate > 0 ? "text-green-600" : 
-      opportunity.hyperliquidData.rate < 0 ? "text-red-600" : ""
-    }`}>
-      {opportunity.hyperliquidData.available ? formatRate(opportunity.hyperliquidData.rate) : "-"}
-    </td>
-    <td className={`px-4 py-3 ${
-      !opportunity.lighterData.available ? "" :
-      opportunity.lighterData.rate > 0 ? "text-green-600" : 
-      opportunity.lighterData.rate < 0 ? "text-red-600" : ""
-    }`}>
-      {opportunity.lighterData.available ? formatRate(opportunity.lighterData.rate) : "-"}
-    </td>
-    <td className="px-4 py-3">
-      <Badge variant={opportunity.maxSpread > 0.001 ? "default" : "secondary"}>
-        {formatRate(opportunity.maxSpread)}
-      </Badge>
-    </td>
-    <td className="px-4 py-3">
-      <div className="flex items-center gap-1">
-        <span className={
-          opportunity.currentAPR > 20 ? "text-green-600 font-semibold" : 
-          opportunity.currentAPR > 10 ? "text-yellow-600" : ""
-        }>
-          {formatAPR(opportunity.currentAPR)}
-        </span>
-      </div>
-    </td>
-    <td className="px-4 py-3 text-sm">{opportunity.bestStrategy}</td>
-    <td className="px-4 py-3 text-xs flex flex-wrap">
-      {opportunity.openInterestHyperliquid ? `H-${formatSmallOI(opportunity.openInterestHyperliquid)}    ` : ''}
-      {opportunity.openInterestLighter ? `L-${formatSmallOI(opportunity.openInterestLighter)}     ` : ''}
-      {opportunity.openInterestDrift ? `D-${formatSmallOI(opportunity.openInterestDrift)}     ` : ''}
-    </td>
-    <td className="px-4 py-3">{opportunity.maxPriceDeviation.toFixed(3)}%</td>
-  </tr>
+  <HoverCard>
+    <HoverCardTrigger asChild>
+      <tr className="border-b hover:bg-blue-50 cursor-pointer transition-colors"
+          onClick={() => onClick(opportunity)} 
+      >    
+        <td className="px-4 py-3 font-medium">{opportunity.asset}</td>
+        <td className={`px-4 py-3 ${
+          !opportunity.driftData.available ? "" :
+          opportunity.driftData.rate > 0 ? "text-green-600" : 
+          opportunity.driftData.rate < 0 ? "text-red-600" : ""
+        }`}>
+          {opportunity.driftData.available ? formatRate(opportunity.driftData.rate) : "-"}
+        </td>
+        <td className={`px-4 py-3 ${
+          !opportunity.hyperliquidData.available ? "" :
+          opportunity.hyperliquidData.rate > 0 ? "text-green-600" : 
+          opportunity.hyperliquidData.rate < 0 ? "text-red-600" : ""
+        }`}>
+          {opportunity.hyperliquidData.available ? formatRate(opportunity.hyperliquidData.rate) : "-"}
+        </td>
+        <td className={`px-4 py-3 ${
+          !opportunity.lighterData.available ? "" :
+          opportunity.lighterData.rate > 0 ? "text-green-600" : 
+          opportunity.lighterData.rate < 0 ? "text-red-600" : ""
+        }`}>
+          {opportunity.lighterData.available ? formatRate(opportunity.lighterData.rate) : "-"}
+        </td>
+        <td className="px-4 py-3">
+          <Badge variant={opportunity.maxSpread > 0.001 ? "default" : "secondary"}>
+            {formatRate(opportunity.maxSpread)}
+          </Badge>
+        </td>
+        <td className="px-4 py-3">
+          <div className="flex items-center gap-1">
+            <span className={
+              opportunity.currentAPR > 20 ? "text-green-600 font-semibold" : 
+              opportunity.currentAPR > 10 ? "text-yellow-600" : ""
+            }>
+              {formatAPR(opportunity.currentAPR)}
+            </span>
+          </div>
+        </td>
+        <td className="px-4 py-3 text-sm">{opportunity.bestStrategy}</td>
+        <td className="px-4 py-3 text-xs flex flex-wrap">
+          {opportunity.openInterestHyperliquid ? `H - ${formatSmallOI(opportunity.openInterestHyperliquid)}    ` : ''}
+          {opportunity.openInterestLighter ? `L - ${formatSmallOI(opportunity.openInterestLighter)}     ` : ''}
+          {opportunity.openInterestDrift ? `D - ${formatSmallOI(opportunity.openInterestDrift)}     ` : ''}
+        </td>
+        <td className="px-4 py-3">{opportunity.maxPriceDeviation.toFixed(3)}%</td>
+      </tr>
+    </HoverCardTrigger>
+    <HoverCardContent className="w-80 text-xs space-y-3 p-4 border shadow-lg rounded-md bg-popover text-popover-foreground dark:bg-zinc-900 dark:text-zinc-100">
+      {opportunity.driftContract && (
+        <div>
+          <h4 className="font-medium text-sm mb-1">Drift</h4>
+          <ul className="space-y-0.5">
+            <li>Funding: {formatRate(opportunity.driftData.rate)}</li>
+            <li>OI: {formatSmallOI(opportunity.openInterestDrift)}</li>
+            <li>Price: {parseFloat(opportunity.driftContract.index_price).toFixed(3)}</li>
+            <li>24h Vol: {parseFloat(opportunity.driftContract.quote_volume).toLocaleString(undefined, { maximumFractionDigits: 0 })}</li>
+          </ul>
+        </div>
+      )}
+      {opportunity.hyperliquidContext && (
+        <div>
+          <h4 className="font-medium text-sm mb-1">Hyperliquid</h4>
+          <ul className="space-y-0.5">
+            <li>Funding: {formatRate(opportunity.hyperliquidData.rate)}</li>
+            <li>OI: {formatSmallOI(opportunity.openInterestHyperliquid)}</li>
+            <li>Mark Px: {parseFloat(opportunity.hyperliquidContext.markPx).toFixed(3)}</li>
+            <li>24h Vlm: {parseFloat(opportunity.hyperliquidContext.dayNtlVlm).toLocaleString(undefined, { maximumFractionDigits: 0 })}</li>
+          </ul>
+        </div>
+      )}
+      {opportunity.lighterStats && (
+        <div>
+          <h4 className="font-medium text-sm mb-1">Lighter</h4>
+          <ul className="space-y-0.5">
+            <li>Funding: {formatRate(opportunity.lighterData.rate)}</li>
+            <li>OI: -</li>
+            <li>Index Px: {parseFloat(opportunity.lighterStats.index_price).toFixed(3)}</li>
+            <li>24h Vol: {opportunity.lighterStats.daily_quote_token_volume.toLocaleString(undefined, { maximumFractionDigits: 0 })}</li>
+          </ul>
+        </div>
+      )}
+      <div className="pt-2 text-[11px] italic text-muted-foreground">Click row to view historical data</div>
+    </HoverCardContent>
+  </HoverCard>
 ));
 
 OpportunityRow.displayName = 'OpportunityRow';
@@ -156,11 +213,10 @@ export default function FundingArbitrageDashboard() {
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedOpportunity, setSelectedOpportunity] = useState<ArbitrageOpportunity | null>(null);
-const [showHistoricalAnalysis, setShowHistoricalAnalysis] = useState(false);
+  const [showHistoricalAnalysis, setShowHistoricalAnalysis] = useState(false);
 
   // Use the optimized WebSocket context
   const { isConnected: lighterWsConnected, marketData: lighterData, lastUpdateTime } = useWebSocket();
-
   // Fetch external data (Drift and Hyperliquid)
   const fetchExternalData = useCallback(async () => {
     try {
@@ -213,13 +269,14 @@ const [showHistoricalAnalysis, setShowHistoricalAnalysis] = useState(false);
         maxSpread: 0,
         currentAPR: 0,
         bestStrategy: '',
-        // Aggregate OI (kept for any existing usage)
         openInterest: 0,
-        // Per-protocol open interest
         openInterestDrift: 0,
         openInterestHyperliquid: 0,
         openInterestLighter: 0,
-        maxPriceDeviation: 0
+        maxPriceDeviation: 0,
+        driftContract: undefined,
+        hyperliquidContext: undefined,
+        lighterStats: undefined,
       });
     });
 
@@ -233,6 +290,7 @@ const [showHistoricalAnalysis, setShowHistoricalAnalysis] = useState(false);
       opp.driftData = { rate: fundingRate, available: true };
       opp.openInterest += openInterest;
       opp.openInterestDrift = openInterest;
+      opp.driftContract = contract;
     });
 
     // Process Hyperliquid data
@@ -249,6 +307,7 @@ const [showHistoricalAnalysis, setShowHistoricalAnalysis] = useState(false);
         opp.hyperliquidData = { rate: fundingRate, available: true };
         opp.openInterest += openInterest;
         opp.openInterestHyperliquid = openInterest;
+        opp.hyperliquidContext = context;
       }
     });
 
@@ -262,7 +321,7 @@ const [showHistoricalAnalysis, setShowHistoricalAnalysis] = useState(false);
       const opp = opportunityMap.get(asset);
       if (opp) {
         opp.lighterData = { rate: fundingRate / 10, available: true };
-        // Currently Lighter WebSocket does not provide open interest; leave as 0
+        opp.lighterStats = stats as unknown as LighterStats;
       }
     });
 

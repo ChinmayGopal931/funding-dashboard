@@ -31,7 +31,7 @@ const navigationItems: NavItem[] = [
   //   description: 'Find cross-exchange and spot+perp arbitrage opportunities'
   // },
   {
-    id: 'comparison',
+    id: 'arbitrage',
     label: 'Arbitrage Scanner',
     icon: <ArrowLeftRight className="h-5 w-5" />,
     component: <FundingArbitrageDashboard/>,
