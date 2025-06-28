@@ -1,47 +1,97 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
-import { DriftContract, DriftFundingRate, HyperliquidAsset, HyperliquidAssetContext, HyperliquidFundingEntry } from "./types";
+import { DriftContract, HyperliquidAsset, HyperliquidAssetContext } from "./types";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
-export const fetchDriftFundingHistory = async (marketSymbol: string): Promise<DriftFundingRate[]> => {
-    try {
-      const response = await fetch(`https://data.api.drift.trade/fundingRates?marketName=${marketSymbol}`);
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await response.json();
-      return data.fundingRates || [];
-    } catch (error) {
-      console.error(`Error fetching Drift funding history for ${marketSymbol}:`, error);
-      return [];
-    }
-  };
 
-  export  const fetchHyperliquidFundingHistory = async (coin: string, startTime: number, endTime: number): Promise<HyperliquidFundingEntry[]> => {
-      try {
-        const response = await fetch('https://api.hyperliquid.xyz/info', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: 'fundingHistory',
-            coin: coin,
-            startTime: startTime,
-            endTime: endTime
-          })
-        });
-        
-        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-        const data: HyperliquidFundingEntry[] = await response.json();
-        
-        // Analysis of time range in the returned data is performed later
-        
-        return data;
-      } catch (error) {
-        console.error(`Error fetching Hyperliquid funding history for ${coin}:`, error);
-        return [];
-      }
-    };
+// Add these interfaces and functions to your utils file (lib/utils.ts)
+
+// Interfaces for historical funding data
+export interface DriftFundingRate {
+  ts: number | string; // Can be Unix timestamp or string
+  txSig: string;
+  slot: number;
+  recordId: string;
+  marketIndex: number;
+  fundingRate: string;
+  cumulativeFundingRateLong: string;
+  cumulativeFundingRateShort: string;
+  oraclePriceTwap: string;
+  markPriceTwap: string;
+  fundingRateLong: string;
+  fundingRateShort: string;
+  periodRevenue: string;
+  baseAssetAmountWithAmm: string;
+  baseAssetAmountWithUnsettledLp: string;
+}
+
+export interface HyperliquidFundingEntry {
+  coin: string;
+  fundingRate: string;
+  premium: string;
+  time: number;
+}
+
+export interface LighterFundingEntry {
+  timestamp: number;
+  value: string;
+  rate: string;
+  direction: string;
+}
+
+// API functions
+export const fetchDriftFundingHistory = async (marketSymbol: string): Promise<DriftFundingRate[]> => {
+  try {
+    const response = await fetch(`https://data.api.drift.trade/fundingRates?marketName=${marketSymbol}`);
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const data = await response.json();
+    return data.fundingRates || [];
+  } catch (error) {
+    console.error(`Error fetching Drift funding history for ${marketSymbol}:`, error);
+    return [];
+  }
+};
+
+export const fetchHyperliquidFundingHistory = async (coin: string, startTime: number, endTime: number): Promise<HyperliquidFundingEntry[]> => {
+  try {
+    const response = await fetch('https://api.hyperliquid.xyz/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'fundingHistory',
+        coin: coin,
+        startTime: startTime,
+        endTime: endTime
+      })
+    });
+    
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const data: HyperliquidFundingEntry[] = await response.json();
+    return data;
+  } catch (error) {
+    console.error(`Error fetching Hyperliquid funding history for ${coin}:`, error);
+    return [];
+  }
+};
+
+export const fetchLighterFundingHistory = async (marketId: number, startTime: number, endTime: number): Promise<LighterFundingEntry[]> => {
+  try {
+    const response = await fetch(
+      `https://mainnet.zklighter.elliot.ai/api/v1/fundings?market_id=${marketId}&resolution=1h&start_timestamp=${startTime}&end_timestamp=${endTime}&count_back=1000`,
+      { headers: { 'accept': 'application/json' } }
+    );
+    
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    const data = await response.json();
+    return data.fundings || [];
+  } catch (error) {
+    console.error(`Error fetching Lighter funding history for market ${marketId}:`, error);
+    return [];
+  }
+};
   
     export   const fetchHyperliquidSpotData = async (): Promise<{ 
         tokens: any[], 
@@ -92,7 +142,7 @@ export const fetchDriftFundingHistory = async (marketSymbol: string): Promise<Dr
         };
 
 
-        export   const fetchDriftContracts = async (): Promise<DriftContract[]> => {
+        export const fetchDriftContracts = async (): Promise<DriftContract[]> => {
             try {
               const response = await fetch('https://data.api.drift.trade/contracts');
               if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
@@ -170,6 +220,52 @@ const BASE_COLORS: Record<string, string> = {
   AVAX: "#45b7d1",
 };
 
+
+export const LIGHTER_MARKET_IDS: { [key: string]: number } = {
+  'ETH': 0,
+  'BTC': 1,
+  'SOL': 2,
+  'DOGE': 3,
+  '1000PEPE': 4,
+  'WIF': 5,
+  'WLD': 6,
+  'XRP': 7,
+  'LINK': 8,
+  'AVAX': 9,
+  'NEAR': 10,
+  'DOT': 11,
+  'TON': 12,
+  'TAO': 13,
+  'POL': 14,
+  'TRUMP': 15,
+  'SUI': 16,
+  '1000SHIB': 17,
+  '1000BONK': 18,
+  '1000FLOKI': 19,
+  'BERA': 20,
+  'FARTCOIN': 21,
+  'AI16Z': 22,
+  'POPCAT': 23,
+  'HYPE': 24,
+  'BNB': 25,
+  'JUP': 26,
+  'AAVE': 27,
+  'MKR': 28,
+  'ENA': 29,
+  'UNI': 30,
+  'APT': 31,
+  'SEI': 32,
+  'KAITO': 33,
+  'IP': 34,
+  'LTC': 35,
+  'CRV': 36,
+  'PENDLE': 37,
+  'ONDO': 38,
+  'ADA': 39,
+  'S': 40,
+  'VIRTUAL': 41,
+  'SPX': 42
+};
 // Helper: generate consistent HSL color from string for new tokens
 function generateColorFromString(str: string): string {
   let hash = 0;

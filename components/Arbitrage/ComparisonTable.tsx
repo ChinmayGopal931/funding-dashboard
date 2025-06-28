@@ -8,6 +8,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tooltip as TooltipComponent, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
 import { useWebSocket } from '@/contexts/WebSocketProvider';
+import { fetchDriftContracts, fetchHyperliquidData, LIGHTER_MARKET_IDS } from '@/lib/utils';
+import HistoricalAnalysis from './HistoricalAnalysis';
 
 // Interfaces
 interface DriftContract {
@@ -51,15 +53,25 @@ interface HyperliquidAssetContext {
   prevDayPx: string;
 }
 
+interface PlatformData {
+  rate: number;
+  available: boolean;
+}
+
 interface ArbitrageOpportunity {
   asset: string;
-  driftRate: number;
-  hyperliquidRate: number;
-  lighterRate: number;
+  driftData: PlatformData;
+  hyperliquidData: PlatformData;
+  lighterData: PlatformData;
   maxSpread: number;
   currentAPR: number;
   bestStrategy: string;
+  // Aggregate OI (kept for any existing usage)
   openInterest: number;
+  // Per-protocol open interest
+  openInterestDrift: number;
+  openInterestHyperliquid: number;
+  openInterestLighter: number;
   maxPriceDeviation: number;
 }
 
@@ -68,36 +80,44 @@ interface ExternalData {
   hyperliquid: { assets: HyperliquidAsset[], contexts: HyperliquidAssetContext[] };
 }
 
-// Market ID mapping for Lighter
-const LIGHTER_MARKET_IDS: { [key: string]: number } = {
-  'BTC': 0,
-  'ETH': 1,
-  'SOL': 2,
-  // Add more mappings as needed
-};
-
 // Memoized table row component
 const OpportunityRow = memo(({ 
   opportunity, 
   formatRate, 
   formatAPR, 
-  formatOI 
+  formatSmallOI,
+  onClick
 }: {
   opportunity: ArbitrageOpportunity;
   formatRate: (rate: number) => string;
   formatAPR: (apr: number) => string;
-  formatOI: (oi: number) => string;
+  formatSmallOI: (oi: number) => string;
+  onClick: (opportunity: ArbitrageOpportunity) => void;
 }) => (
-  <tr className="border-b hover:bg-muted/50">
+<tr className="border-b hover:bg-muted/50 cursor-pointer transition-colors"
+        onClick={() => onClick(opportunity)} 
+    >    
     <td className="px-4 py-3 font-medium">{opportunity.asset}</td>
-    <td className={`px-4 py-3 ${opportunity.driftRate > 0 ? "text-green-600" : opportunity.driftRate < 0 ? "text-red-600" : ""}`}>
-      {formatRate(opportunity.driftRate)}
+    <td className={`px-4 py-3 ${
+      !opportunity.driftData.available ? "" :
+      opportunity.driftData.rate > 0 ? "text-green-600" : 
+      opportunity.driftData.rate < 0 ? "text-red-600" : ""
+    }`}>
+      {opportunity.driftData.available ? formatRate(opportunity.driftData.rate) : "-"}
     </td>
-    <td className={`px-4 py-3 ${opportunity.hyperliquidRate > 0 ? "text-green-600" : opportunity.hyperliquidRate < 0 ? "text-red-600" : ""}`}>
-      {formatRate(opportunity.hyperliquidRate)}
+    <td className={`px-4 py-3 ${
+      !opportunity.hyperliquidData.available ? "" :
+      opportunity.hyperliquidData.rate > 0 ? "text-green-600" : 
+      opportunity.hyperliquidData.rate < 0 ? "text-red-600" : ""
+    }`}>
+      {opportunity.hyperliquidData.available ? formatRate(opportunity.hyperliquidData.rate) : "-"}
     </td>
-    <td className={`px-4 py-3 ${opportunity.lighterRate > 0 ? "text-green-600" : opportunity.lighterRate < 0 ? "text-red-600" : ""}`}>
-      {formatRate(opportunity.lighterRate)}
+    <td className={`px-4 py-3 ${
+      !opportunity.lighterData.available ? "" :
+      opportunity.lighterData.rate > 0 ? "text-green-600" : 
+      opportunity.lighterData.rate < 0 ? "text-red-600" : ""
+    }`}>
+      {opportunity.lighterData.available ? formatRate(opportunity.lighterData.rate) : "-"}
     </td>
     <td className="px-4 py-3">
       <Badge variant={opportunity.maxSpread > 0.001 ? "default" : "secondary"}>
@@ -115,7 +135,11 @@ const OpportunityRow = memo(({
       </div>
     </td>
     <td className="px-4 py-3 text-sm">{opportunity.bestStrategy}</td>
-    <td className="px-4 py-3">{formatOI(opportunity.openInterest)}</td>
+    <td className="px-4 py-3 text-xs flex flex-wrap">
+      {opportunity.openInterestHyperliquid ? `H-${formatSmallOI(opportunity.openInterestHyperliquid)} ` : ''}
+      {opportunity.openInterestLighter ? `L-${formatSmallOI(opportunity.openInterestLighter)} ` : ''}
+      {opportunity.openInterestDrift ? `D-${formatSmallOI(opportunity.openInterestDrift)}` : ''}
+    </td>
     <td className="px-4 py-3">{opportunity.maxPriceDeviation.toFixed(3)}%</td>
   </tr>
 ));
@@ -131,47 +155,11 @@ export default function FundingArbitrageDashboard() {
   });
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
-  
+  const [selectedOpportunity, setSelectedOpportunity] = useState<ArbitrageOpportunity | null>(null);
+const [showHistoricalAnalysis, setShowHistoricalAnalysis] = useState(false);
+
   // Use the optimized WebSocket context
   const { isConnected: lighterWsConnected, marketData: lighterData, lastUpdateTime } = useWebSocket();
-
-  // API Fetching Functions (memoized to prevent recreation)
-  const fetchDriftContracts = useCallback(async (): Promise<DriftContract[]> => {
-    try {
-      const response = await fetch('https://data.api.drift.trade/contracts');
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await response.json();
-      return data.contracts?.filter((contract: DriftContract) => 
-        contract.product_type === 'PERP' && 
-        contract.ticker_id && 
-        contract.next_funding_rate !== null
-      ) || [];
-    } catch (error) {
-      console.error('Error fetching Drift contracts:', error);
-      return [];
-    }
-  }, []);
-
-  const fetchHyperliquidData = useCallback(async (): Promise<{ assets: HyperliquidAsset[], contexts: HyperliquidAssetContext[] }> => {
-    try {
-      const response = await fetch('https://api.hyperliquid.xyz/info', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ type: 'metaAndAssetCtxs' })
-      });
-      
-      if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
-      const data = await response.json();
-      
-      return {
-        assets: data[0]?.universe || [],
-        contexts: data[1] || []
-      };
-    } catch (error) {
-      console.error('Error fetching Hyperliquid data:', error);
-      return { assets: [], contexts: [] };
-    }
-  }, []);
 
   // Fetch external data (Drift and Hyperliquid)
   const fetchExternalData = useCallback(async () => {
@@ -200,22 +188,51 @@ export default function FundingArbitrageDashboard() {
   const opportunities = useMemo(() => {
     const opportunityMap = new Map<string, ArbitrageOpportunity>();
 
-    // Process Drift data
+    // First, collect all unique assets from all platforms
+    const allAssets = new Set<string>();
+    
     externalData.drift.forEach(contract => {
-      const asset = contract.base_currency.toUpperCase();
-      const fundingRate = parseFloat( contract.funding_rate || '0') / 100;
-      const openInterest = parseFloat(contract.open_interest || '0');
+      allAssets.add(contract.base_currency.toUpperCase());
+    });
+    
+    externalData.hyperliquid.assets.forEach(asset => {
+      allAssets.add(asset.name.toUpperCase());
+    });
+    
+    Object.keys(LIGHTER_MARKET_IDS).forEach(asset => {
+      allAssets.add(asset);
+    });
+
+    // Initialize opportunities for all assets
+    allAssets.forEach(asset => {
       opportunityMap.set(asset, {
         asset,
-        driftRate: fundingRate,
-        hyperliquidRate: 0,
-        lighterRate: 0,
+        driftData: { rate: 0, available: false },
+        hyperliquidData: { rate: 0, available: false },
+        lighterData: { rate: 0, available: false },
         maxSpread: 0,
         currentAPR: 0,
         bestStrategy: '',
-        openInterest: openInterest,
+        // Aggregate OI (kept for any existing usage)
+        openInterest: 0,
+        // Per-protocol open interest
+        openInterestDrift: 0,
+        openInterestHyperliquid: 0,
+        openInterestLighter: 0,
         maxPriceDeviation: 0
       });
+    });
+
+    // Process Drift data
+    externalData.drift.forEach(contract => {
+      const asset = contract.base_currency.toUpperCase();
+      const fundingRate = parseFloat(contract.funding_rate || '0') / 100;
+      const openInterest = parseFloat(contract.open_interest || '0');
+      
+      const opp = opportunityMap.get(asset)!;
+      opp.driftData = { rate: fundingRate, available: true };
+      opp.openInterest += openInterest;
+      opp.openInterestDrift = openInterest;
     });
 
     // Process Hyperliquid data
@@ -227,21 +244,12 @@ export default function FundingArbitrageDashboard() {
       const fundingRate = parseFloat(context.funding || '0') * 10;
       const openInterest = parseFloat(context.openInterest || '0');
       
-      const existing = opportunityMap.get(assetName) || {
-        asset: assetName,
-        driftRate: 0,
-        hyperliquidRate: 0,
-        lighterRate: 0,
-        maxSpread: 0,
-        currentAPR: 0,
-        bestStrategy: '',
-        openInterest: 0,
-        maxPriceDeviation: 0
-      };
-      
-      existing.hyperliquidRate = fundingRate;
-      existing.openInterest += openInterest;
-      opportunityMap.set(assetName, existing);
+      const opp = opportunityMap.get(assetName);
+      if (opp) {
+        opp.hyperliquidData = { rate: fundingRate, available: true };
+        opp.openInterest += openInterest;
+        opp.openInterestHyperliquid = openInterest;
+      }
     });
 
     // Process Lighter data from WebSocket
@@ -251,75 +259,105 @@ export default function FundingArbitrageDashboard() {
       
       const fundingRate = parseFloat(stats.current_funding_rate || stats.funding_rate || '0');
       
-      const existing = opportunityMap.get(asset) || {
-        asset,
-        driftRate: 0,
-        hyperliquidRate: 0,
-        lighterRate: 0,
-        maxSpread: 0,
-        currentAPR: 0,
-        bestStrategy: '',
-        openInterest: 0,
-        maxPriceDeviation: 0
-      };
-      
-      existing.lighterRate = fundingRate / 10;
-      opportunityMap.set(asset, existing);
+      const opp = opportunityMap.get(asset);
+      if (opp) {
+        opp.lighterData = { rate: fundingRate / 10, available: true };
+        // Currently Lighter WebSocket does not provide open interest; leave as 0
+      }
     });
 
     // Calculate max spreads and best strategies
     opportunityMap.forEach(opp => {
-        const rates = [
-          { name: 'Spot', rate: 0 },
-          { name: 'Drift', rate: opp.driftRate },
-          { name: 'Hyperliquid', rate: opp.hyperliquidRate },
-          { name: 'Lighter', rate: opp.lighterRate }
-        ];
-        
-        // Sort rates from most negative to most positive
-        const sortedRates = [...rates].sort((a, b) => a.rate - b.rate);
-        
-        // Best long position: most negative rate (shorts pay longs)
-        const bestLong = sortedRates[0];
-        
-        // Best short position: most positive rate (longs pay shorts)
-        const bestShort = sortedRates[sortedRates.length - 1];
-        
-        // Calculate the delta (spread)
-        const maxSpread = bestShort.rate - bestLong.rate;
-        
-        // Format strategy string
-        let bestStrategy = '';
-        if (bestLong.name === 'Spot') {
-          bestStrategy = `Buy Spot / Short ${bestShort.name}`;
-        } else if (bestShort.name === 'Spot') {
-          bestStrategy = `Long ${bestLong.name} / Sell Spot`;
-        } else {
-          bestStrategy = `Long ${bestLong.name} / Short ${bestShort.name}`;
-        }
-        
-        opp.maxSpread = maxSpread;
-        opp.currentAPR = maxSpread * 365 * 100; // Convert to annual percentage
-        opp.bestStrategy = bestStrategy;
-        
-        // Calculate max price deviation (simplified)
-        const maxRate = Math.max(Math.abs(opp.driftRate), Math.abs(opp.hyperliquidRate), Math.abs(opp.lighterRate));
-        opp.maxPriceDeviation = maxRate * 100;
-      });
-  
+      const availablePlatforms: { name: string; rate: number }[] = [];
+      
+      // Always include spot as available
+      availablePlatforms.push({ name: 'Spot', rate: 0 });
+      
+      if (opp.driftData.available) {
+        availablePlatforms.push({ name: 'Drift', rate: opp.driftData.rate });
+      }
+      
+      if (opp.hyperliquidData.available) {
+        availablePlatforms.push({ name: 'Hyperliquid', rate: opp.hyperliquidData.rate });
+      }
+      
+      if (opp.lighterData.available) {
+        availablePlatforms.push({ name: 'Lighter', rate: opp.lighterData.rate });
+      }
 
-    const opportunitiesArray = Array.from(opportunityMap.values());
-    opportunitiesArray.sort((a, b) => b.currentAPR - a.currentAPR);
+      if (availablePlatforms.length === 1) {
+        // Only spot is available, no arbitrage opportunity
+        opp.maxSpread = 0;
+        opp.currentAPR = 0;
+        opp.bestStrategy = 'No arbitrage available';
+        return;
+      }
+
+      // Sort platforms by rate (most negative to most positive)
+      const sortedPlatforms = [...availablePlatforms].sort((a, b) => a.rate - b.rate);
+
+      // Determine the best long (most negative rate)
+      const bestLong = sortedPlatforms[0];
+
+      // Determine the best short (most positive rate) EXCLUDING spot
+      const shortCandidates = sortedPlatforms.filter(p => p.name !== 'Spot');
+      if (shortCandidates.length === 0) {
+        // No derivative platform to short against
+        opp.maxSpread = 0;
+        opp.currentAPR = 0;
+        opp.bestStrategy = 'No arbitrage available';
+        return;
+      }
+      const bestShort = shortCandidates[shortCandidates.length - 1];
+
+      // Prevent pairing a long with itself
+      if (bestLong.name === bestShort.name) {
+        opp.maxSpread = 0;
+        opp.currentAPR = 0;
+        opp.bestStrategy = 'No arbitrage available';
+        return;
+      }
+
+      // Calculate the spread
+      const maxSpread = bestShort.rate - bestLong.rate;
+
+      // Build strategy string under the rules:
+      // - Longs can only be paired with shorts
+      // - Shorts can be paired with longs or spot (handled by allowing Spot as long only)
+      let bestStrategy = '';
+      if (bestLong.name === 'Spot') {
+        // Spot as long position (allowed) paired with derivative short
+        bestStrategy = `Buy Spot / Short ${bestShort.name}`;
+      } else {
+        // Both positions are derivatives
+        bestStrategy = `Long ${bestLong.name} / Short ${bestShort.name}`;
+      }
+
+      opp.maxSpread = maxSpread;
+      opp.currentAPR = maxSpread * 365 * 100; // Convert to annual percentage
+      opp.bestStrategy = bestStrategy;
+      
+      // Calculate max price deviation from available rates
+      const availableRates = availablePlatforms
+        .filter(p => p.name !== 'Spot')
+        .map(p => Math.abs(p.rate));
+      
+      const maxRate = availableRates.length > 0 ? Math.max(...availableRates) : 0;
+      opp.maxPriceDeviation = maxRate * 100;
+    });
+
+    // Filter out opportunities with no available platforms (except spot) and sort by APR
+    const opportunitiesArray = Array.from(opportunityMap.values())
+      .filter(opp => opp.driftData.available || opp.hyperliquidData.available || opp.lighterData.available)
+      .sort((a, b) => b.currentAPR - a.currentAPR);
     
     return opportunitiesArray;
-  }, [externalData, lighterData, lastUpdateTime]); // Only recalculate when data changes
+  }, [externalData, lighterData, lastUpdateTime]);
 
   // Initial load
   useEffect(() => {
     fetchExternalData();
   }, []);
-
-
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -335,12 +373,33 @@ export default function FundingArbitrageDashboard() {
     return `${apr.toFixed(2)}%`;
   }, []);
 
-  const formatOI = useCallback((oi: number) => {
-    if (oi >= 1e9) return `$${(oi / 1e9).toFixed(2)}B`;
-    if (oi >= 1e6) return `$${(oi / 1e6).toFixed(2)}M`;
-    if (oi >= 1e3) return `$${(oi / 1e3).toFixed(2)}K`;
-    return `$${oi.toFixed(2)}`;
+  const handleRowClick = useCallback((opportunity: ArbitrageOpportunity) => {
+    setSelectedOpportunity(opportunity);
+    setShowHistoricalAnalysis(true);
   }, []);
+  
+  const handleBackFromAnalysis = useCallback(() => {
+    setShowHistoricalAnalysis(false);
+    setSelectedOpportunity(null);
+  }, []);
+
+  // Compact formatter for per-protocol OI strings (no $ prefix)
+  const formatSmallOI = useCallback((oi: number) => {
+    if (oi >= 1e9) return `${(oi / 1e9).toFixed(1)}B`;
+    if (oi >= 1e6) return `${(oi / 1e6).toFixed(1)}M`;
+    if (oi >= 1e3) return `${(oi / 1e3).toFixed(1)}K`;
+    return oi.toFixed(0);
+  }, []);
+
+  if (showHistoricalAnalysis && selectedOpportunity) {
+    return (
+      <HistoricalAnalysis
+        opportunity={selectedOpportunity}
+        onBack={handleBackFromAnalysis}
+        lighterMarketIds={LIGHTER_MARKET_IDS}
+      />
+    );
+  }
 
   return (
     <div className="w-full max-w-7xl mx-auto p-4 space-y-6">
@@ -455,7 +514,8 @@ export default function FundingArbitrageDashboard() {
                       opportunity={opp}
                       formatRate={formatRate}
                       formatAPR={formatAPR}
-                      formatOI={formatOI}
+                      formatSmallOI={formatSmallOI}
+                      onClick={handleRowClick}
                     />
                   ))
                 )}
@@ -463,16 +523,19 @@ export default function FundingArbitrageDashboard() {
             </table>
           </div>
 
+          
+
           <div className="mt-4 p-4 bg-muted rounded-lg">
             <h3 className="font-semibold mb-2 flex items-center gap-2">
               <Info className="h-4 w-4" />
               Strategy Information
             </h3>
             <div className="text-sm text-muted-foreground space-y-1">
-              <p>• <strong>Spot/Short</strong>: Buy spot asset on DEX, short perpetual futures</p>
+              <p>• <strong>Buy Spot/Short</strong>: Buy spot asset on DEX, short perpetual futures</p>
               <p>• <strong>Long/Short</strong>: Long perpetual on one protocol, short on another</p>
               <p>• Funding rates shown are per funding period (8 hours for most, 1 hour for Lighter)</p>
               <p>• APR calculation assumes continuous compounding of funding payments</p>
+              <p>• &rdquo;-&rdquo; indicates market not available on that platform</p>
             </div>
           </div>
         </CardContent>

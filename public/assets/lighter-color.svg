@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg id="Layer_1" data-name="Layer 1" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 101.07 101.07">
+  <defs>
+    <style>
+      .cls-1 {
+        fill: #fff;
+      }
+
+      .cls-2 {
+        fill: #386cdb;
+      }
+    </style>
+  </defs>
+  <circle cx="50.53" cy="50.53" r="50.53"/>
+  <path class="cls-2" d="M101.07,50.53C101.07,22.63,78.45,0,50.55,0V101.07c27.9,0,50.52-22.63,50.52-50.53Z"/>
+  <polygon class="cls-1" points="50.52 73.77 31.41 91.91 31.41 22.3 50.52 3.19 50.52 73.77"/>
+  <polygon class="cls-1" points="73.62 73.77 54.5 91.91 54.5 64.7 73.62 45.59 73.62 73.77"/>
+</svg>

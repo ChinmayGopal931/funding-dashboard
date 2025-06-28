@@ -2,15 +2,12 @@
 import React, { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { 
-  TrendingUp, 
   Menu, 
-  Activity,
   Coins,
-  ArrowLeftRight,
-  ChevronLeft
+  ChevronLeft,
+  ArrowLeftRight
 } from 'lucide-react';
 import FundingRatesChart from '@/components/HyperliquidFundingChart';
-import FundingArbitrageWithDetails from '@/components/Comparison';
 import DriftFundingRatesChart from '@/components/DriftFundingChart';
 import ZkLighterMultiFundingChart from '@/components/LighterRateChart';
 import FundingArbitrageDashboard from '@/components/Arbitrage/ComparisonTable';
@@ -26,41 +23,42 @@ interface NavItem {
 }
 
 const navigationItems: NavItem[] = [
+  // {
+  //   id: 'arbitrage',
+  //   label: 'Arbitrage Scanner',
+  //   icon: <ArrowLeftRight className="h-5 w-5" />,
+  //   component: <FundingArbitrageWithDetails />,
+  //   description: 'Find cross-exchange and spot+perp arbitrage opportunities'
+  // },
   {
-    id: 'arbitrage',
-    label: 'Arbitrage Scanner',
+    id: 'comparison',
+    label: 'Comparison',
     icon: <ArrowLeftRight className="h-5 w-5" />,
-    component: <FundingArbitrageWithDetails />,
-    description: 'Find cross-exchange and spot+perp arbitrage opportunities'
+    component: <FundingArbitrageDashboard/>,
+    description: 'Lighter historical funding rates'
   },
   {
     id: 'hyperliquid',
     label: 'Hyperliquid Charts',
-    icon: <TrendingUp className="h-5 w-5" />,
+    icon: <img src="/assets/hyperliquid.svg" alt="Hyperliquid" className="h-5 w-5" />,
     component: <FundingRatesChart />,
     description: 'Hyperliquid historical funding rates'
   },
   {
     id: 'drift',
     label: 'Drift Charts',
-    icon: <Activity className="h-5 w-5" />,
+    icon: <img src="/assets/drift.svg" alt="Drift" className="h-5 w-5" />,
     component: <DriftFundingRatesChart/>,
     description: 'Drift historical funding rates'
   },
   {
     id: 'lighter',
     label: 'Lighter Charts',
-    icon: <Activity className="h-5 w-5" />,
+    icon: <img src="/assets/lighter-color.svg" alt="Lighter" className="h-5 w-5" />,
     component: <ZkLighterMultiFundingChart/>,
     description: 'Lighter historical funding rates'
   },
-  {
-    id: 'comparison',
-    label: 'Comparison',
-    icon: <Activity className="h-5 w-5" />,
-    component: <FundingArbitrageDashboard/>,
-    description: 'Lighter historical funding rates'
-  }
+
 ];
 
 export default function FundingDashboard() {

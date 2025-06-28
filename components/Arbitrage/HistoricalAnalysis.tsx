@@ -1,0 +1,542 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+"use client"
+
+import React, { useState, useEffect, useMemo } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { ArrowLeft, Loader2, AlertCircle } from 'lucide-react';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import { DriftFundingRate } from '@/lib/types';
+
+interface ArbitrageOpportunity {
+  asset: string;
+  driftData: { rate: number; available: boolean };
+  hyperliquidData: { rate: number; available: boolean };
+  lighterData: { rate: number; available: boolean };
+  maxSpread: number;
+  currentAPR: number;
+  bestStrategy: string;
+  openInterest: number;
+  maxPriceDeviation: number;
+}
+
+interface HistoricalAnalysisProps {
+  opportunity: ArbitrageOpportunity;
+  onBack: () => void;
+  lighterMarketIds: Record<string, number>;
+}
+
+interface FundingDataPoint {
+  timestamp: number;
+  date: string;
+  drift?: number;
+  hyperliquid?: number;
+  lighter?: number;
+  spot: number;
+  spread?: number;
+}
+
+interface CumulativeDataPoint {
+  timestamp: number;
+  date: string;
+  cumulativeReturn: number;
+  hourlyReturn: number;
+}
+
+// API Functions
+async function fetchDriftHistoricalRates(asset: string, days: number): Promise<FundingDataPoint[]> {
+  const marketName = `${asset}-PERP`;
+  const url = `https://data.api.drift.trade/fundingRates?marketName=${marketName}`;
+
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return [];
+
+    const { fundingRates } = (await response.json()) as { fundingRates: DriftFundingRate[] };
+    const rates: DriftFundingRate[] = fundingRates || [];
+
+    const cutoffTime = Date.now() - days * 24 * 60 * 60 * 1000; // milliseconds
+
+    return rates
+      .map((rate) => {
+        const timestamp = Number(rate.ts) * 1000; // convert seconds to milliseconds
+        return { rate, timestamp };
+      })
+      .filter(({ timestamp }) => timestamp > cutoffTime)
+      .map(({ rate, timestamp }) => {
+        const fundingRate = parseFloat(rate.fundingRate) / 1e9;
+        const oracleTwap = parseFloat(rate.oraclePriceTwap) / 1e6;
+        const fundingRatePct = (fundingRate / oracleTwap) * 100;
+        const hourlyRate = fundingRatePct / 8; // 8-hour rate -> hourly
+
+        return {
+          timestamp,
+          date: new Date(timestamp).toLocaleString(),
+          drift: hourlyRate * 100, // scale up by 100 to correct units
+          spot: 0,
+        } as FundingDataPoint;
+      });
+  } catch (error) {
+    console.error('Error fetching Drift rates:', error);
+    return [];
+  }
+}
+
+async function fetchHyperliquidHistoricalRates(asset: string, days: number): Promise<FundingDataPoint[]> {
+  const endTime = Date.now();
+  const startTime = endTime - (days * 24 * 60 * 60 * 1000);
+  
+  try {
+    const response = await fetch('https://api.hyperliquid.xyz/info', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        type: 'fundingHistory',
+        coin: asset,
+        startTime: startTime,
+        endTime: endTime
+      })
+    });
+    
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    
+    return data.map((item: any) => {
+      // Convert 8-hour rate to hourly rate (percentage)
+      const hourlyRate = parseFloat(item.fundingRate) * 100 / 8;
+      
+      return {
+        timestamp: item.time,
+        date: new Date(item.time).toLocaleString(),
+        hyperliquid: hourlyRate,
+        spot: 0
+      };
+    });
+  } catch (error) {
+    console.error('Error fetching Hyperliquid rates:', error);
+    return [];
+  }
+}
+
+async function fetchLighterHistoricalRates(marketId: number, days: number): Promise<FundingDataPoint[]> {
+  const endTime = Date.now();
+  const startTime = endTime - (days * 24 * 60 * 60 * 1000);
+  const countBack = days * 24; // Hourly data points
+  
+  const url = `https://mainnet.zklighter.elliot.ai/api/v1/fundings?market_id=${marketId}&resolution=1h&start_timestamp=${startTime}&end_timestamp=${endTime}&count_back=${countBack}`;
+  
+  try {
+    const response = await fetch(url);
+    if (!response.ok) return [];
+    
+    const data = await response.json();
+    const fundings = data.fundings || [];
+    
+    return fundings.map((funding: any) => ({
+      timestamp: funding.timestamp * 1000, // Convert to milliseconds
+      date: new Date(funding.timestamp * 1000).toLocaleString(),
+      // Convert to percentage and adjust by dividing by 10 per new requirement
+      lighter: parseFloat(funding.rate) * 10,
+      spot: 0
+    }));
+  } catch (error) {
+    console.error('Error fetching Lighter rates:', error);
+    return [];
+  }
+}
+
+// Custom tooltip component
+const CustomTooltip = ({ active, payload, label }: any) => {
+  if (active && payload && payload.length) {
+    return (
+      <div className="bg-background border rounded-lg p-3 shadow-lg">
+        <p className="text-sm font-medium">{label}</p>
+        {payload.map((entry: any) => (
+          <p key={entry.name} className="text-sm" style={{ color: entry.color }}>
+            {entry.name}: {entry.value?.toFixed(4)}%
+          </p>
+        ))}
+      </div>
+    );
+  }
+  return null;
+};
+
+export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketIds }: HistoricalAnalysisProps) {
+  const [timeRange, setTimeRange] = useState<'24h' | '7d' | '30d'>('7d');
+  const [loading, setLoading] = useState(true);
+  const [fundingData, setFundingData] = useState<FundingDataPoint[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  // Parse strategy to determine which platforms to show
+  const strategyPlatforms = useMemo(() => {
+    const strategy = opportunity.bestStrategy;
+    const platforms: string[] = [];
+    
+    if (strategy.includes('Drift')) platforms.push('drift');
+    if (strategy.includes('Hyperliquid')) platforms.push('hyperliquid');
+    if (strategy.includes('Lighter')) platforms.push('lighter');
+    if (strategy.includes('Spot')) platforms.push('spot');
+    
+    return platforms;
+  }, [opportunity.bestStrategy]);
+
+  // Determine if platform is long or short based on strategy
+  const platformPositions = useMemo(() => {
+    const strategy = opportunity.bestStrategy;
+    const positions: Record<string, 'long' | 'short'> = {};
+    
+    // Parse strategy like "Long Drift / Short Hyperliquid" or "Buy Spot / Short Lighter"
+    const parts = strategy.split('/');
+    
+    parts.forEach(part => {
+      const trimmed = part.trim();
+      if (trimmed.includes('Long') || trimmed.includes('Buy')) {
+        const platform = trimmed.replace('Long ', '').replace('Buy ', '').toLowerCase();
+        positions[platform] = 'long';
+      } else if (trimmed.includes('Short')) {
+        const platform = trimmed.replace('Short ', '').toLowerCase();
+        positions[platform] = 'short';
+      } else if (trimmed === 'Spot') {
+        positions['spot'] = 'short'; // In "Long X / Spot", spot is effectively the short side
+      }
+    });
+    
+    return positions;
+  }, [opportunity.bestStrategy]);
+
+  // Fetch historical data
+  useEffect(() => {
+    const fetchAllData = async () => {
+      setLoading(true);
+      setError(null);
+      
+      try {
+        const days = timeRange === '24h' ? 1 : timeRange === '7d' ? 7 : 30;
+        const promises = [];
+        
+        if (strategyPlatforms.includes('drift')) {
+          promises.push(fetchDriftHistoricalRates(opportunity.asset, days));
+        }
+        
+        if (strategyPlatforms.includes('hyperliquid')) {
+          promises.push(fetchHyperliquidHistoricalRates(opportunity.asset, days));
+        }
+        
+        if (strategyPlatforms.includes('lighter')) {
+          const marketId = lighterMarketIds[opportunity.asset];
+          if (marketId) {
+            promises.push(fetchLighterHistoricalRates(marketId, days));
+          }
+        }
+        
+        const results = await Promise.all(promises);
+
+        // Merge all data points by timestamp
+        const dataMap = new Map<number, FundingDataPoint>();
+        
+        results.forEach((platformData) => {
+          platformData.forEach(point => {
+            const existing = dataMap.get(point.timestamp) || {
+              timestamp: point.timestamp,
+              date: point.date,
+              spot: 0
+            };
+            
+            Object.assign(existing, point);
+            dataMap.set(point.timestamp, existing);
+          });
+        });
+        
+        // Convert to array and sort by timestamp
+        const mergedData = Array.from(dataMap.values())
+          .sort((a, b) => a.timestamp - b.timestamp);
+        
+        // Calculate spread for each data point
+        mergedData.forEach(point => {
+          let longRate = 0;
+          let shortRate = 0;
+          
+          Object.entries(platformPositions).forEach(([platform, position]) => {
+            const rate = point[platform as keyof FundingDataPoint] as number || 0;
+            if (position === 'long') {
+              longRate = rate;
+            } else {
+              shortRate = rate;
+            }
+          });
+          
+          // Spread = Short funding rate - Long funding rate
+          // When positive, we earn from the spread
+          point.spread = shortRate - longRate;
+        });
+        
+        setFundingData(mergedData);
+      } catch (err) {
+        setError('Failed to fetch historical data');
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    fetchAllData();
+  }, [timeRange, opportunity.asset, strategyPlatforms, platformPositions, lighterMarketIds]);
+
+  // Calculate cumulative performance
+  const cumulativeData = useMemo(() => {
+    if (fundingData.length === 0) return [];
+    
+    let cumulativeReturn = 0;
+    const performanceData: CumulativeDataPoint[] = [];
+    
+    fundingData.forEach(point => {
+      const hourlyReturn = point.spread || 0;
+      cumulativeReturn += hourlyReturn;
+      
+      performanceData.push({
+        timestamp: point.timestamp,
+        date: point.date,
+        hourlyReturn: hourlyReturn,
+        cumulativeReturn: cumulativeReturn
+      });
+    });
+    
+    return performanceData;
+  }, [fundingData]);
+
+  // Chart colors
+  const chartColors = {
+    drift: '#8b5cf6',
+    hyperliquid: '#3b82f6',
+    lighter: '#10b981',
+    spot: '#6b7280',
+    spread: '#f59e0b',
+    cumulative: '#ef4444'
+  };
+
+  return (
+    <div className="w-full max-w-7xl mx-auto p-4 space-y-6">
+      <Card>
+        <CardHeader>
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onBack}
+              className="p-2"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <div className="flex-1">
+              <CardTitle className="text-2xl">
+                Historical Analysis - {opportunity.asset}
+              </CardTitle>
+              <CardDescription>
+                Strategy: {opportunity.bestStrategy}
+              </CardDescription>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {error && (
+            <Alert className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+          
+          <Tabs value={timeRange} onValueChange={(v) => setTimeRange(v as any)}>
+            <TabsList className="mb-4">
+              <TabsTrigger value="24h">24 Hours</TabsTrigger>
+              <TabsTrigger value="7d">7 Days</TabsTrigger>
+              <TabsTrigger value="30d">30 Days</TabsTrigger>
+            </TabsList>
+            
+            <TabsContent value={timeRange} className="space-y-6">
+              {loading ? (
+                <div className="flex justify-center py-12">
+                  <Loader2 className="h-8 w-8 animate-spin" />
+                </div>
+              ) : (
+                <>
+                  {/* Historical Funding Rates Chart */}
+                  <div>
+                    <h3 className="text-lg font-semibold mb-4">Historical Funding Rates (Hourly %)</h3>
+                    <div className="h-[400px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={fundingData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis 
+                            dataKey="timestamp"
+                            tick={{ fontSize: 12 }}
+                            angle={-45}
+                            textAnchor="end"
+                            height={60}
+                            type="number"
+                            domain={['dataMin', 'dataMax']}
+                            tickFormatter={(value: number) => {
+                              const d = new Date(value);
+                              return timeRange === '24h'
+                                ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                : `${d.getMonth() + 1}/${d.getDate()}`;
+                            }}
+                          />
+                          <YAxis 
+                            label={{ value: 'Funding Rate (%)', angle: -90, position: 'insideLeft' }}
+                          />
+                          <Tooltip content={<CustomTooltip />} />
+                          <Legend />
+                          
+                          {strategyPlatforms.includes('drift') && (
+                            <Line 
+                              type="monotone" 
+                              dataKey="drift" 
+                              stroke={chartColors.drift}
+                              name={`Drift (${platformPositions.drift})`}
+                              strokeWidth={1}
+                              dot={false}
+                              connectNulls
+                            />
+                          )}
+                          
+                          {strategyPlatforms.includes('hyperliquid') && (
+                            <Line 
+                              type="monotone" 
+                              dataKey="hyperliquid" 
+                              stroke={chartColors.hyperliquid}
+                              name={`Hyperliquid (${platformPositions.hyperliquid})`}
+                              strokeWidth={1}
+                              dot={false}
+                              connectNulls
+                            />
+                          )}
+                          
+                          {strategyPlatforms.includes('lighter') && (
+                            <Line 
+                              type="monotone" 
+                              dataKey="lighter" 
+                              stroke={chartColors.lighter}
+                              name={`Lighter (${platformPositions.lighter})`}
+                              strokeWidth={1}
+                              dot={false}
+                              connectNulls
+                            />
+                          )}
+                          
+                          {strategyPlatforms.includes('spot') && (
+                            <Line 
+                              type="monotone" 
+                              dataKey="spot" 
+                              stroke={chartColors.spot}
+                              name="Spot"
+                              strokeWidth={3}
+                              strokeDasharray="5 5"
+                              dot={false}
+                              connectNulls
+                            />
+                          )}
+                          
+                          {/* <Line 
+                            type="monotone" 
+                            dataKey="spread" 
+                            stroke={chartColors.spread}
+                            name="Spread (Profit)"
+                            strokeWidth={1}
+                            dot={false}
+                          /> */}
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  
+                  {/* Cumulative Strategy Performance Chart */}
+                  <div>
+                    <h3 className="text-lg font-semibold mb-4">Cumulative Strategy Performance</h3>
+                    <div className="h-[400px]">
+                      <ResponsiveContainer width="100%" height="100%">
+                        <LineChart data={cumulativeData}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis 
+                            dataKey="timestamp"
+                            tick={{ fontSize: 12 }}
+                            angle={-45}
+                            textAnchor="end"
+                            height={60}
+                            type="number"
+                            domain={['dataMin', 'dataMax']}
+                            tickFormatter={(value: number) => {
+                              const d = new Date(value);
+                              return timeRange === '24h'
+                                ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                : `${d.getMonth() + 1}/${d.getDate()}`;
+                            }}
+                          />
+                          <YAxis 
+                            label={{ value: 'Cumulative Return (%)', angle: -90, position: 'insideLeft' }}
+                          />
+                          <Tooltip content={<CustomTooltip />} />
+                          <Legend />
+                          
+                          <Line 
+                            type="monotone" 
+                            dataKey="cumulativeReturn" 
+                            stroke={chartColors.cumulative}
+                            name="Cumulative Return"
+                            strokeWidth={1}
+                            dot={false}
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  
+                  {/* Summary Statistics */}
+                  <div className="mt-6 p-4 bg-muted rounded-lg">
+                    <h3 className="font-semibold mb-2">Performance Summary</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                      <div>
+                        <p className="text-muted-foreground">Total Return</p>
+                        <p className="font-semibold">
+                          {cumulativeData.length > 0 
+                            ? `${cumulativeData[cumulativeData.length - 1].cumulativeReturn.toFixed(2)}%`
+                            : '0.00%'
+                          }
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Avg Hourly Return</p>
+                        <p className="font-semibold">
+                          {cumulativeData.length > 0 
+                            ? `${(cumulativeData.reduce((acc, d) => acc + d.hourlyReturn, 0) / cumulativeData.length).toFixed(4)}%`
+                            : '0.0000%'
+                          }
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Data Points</p>
+                        <p className="font-semibold">{fundingData.length}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Annualized Return</p>
+                        <p className="font-semibold">
+                          {cumulativeData.length > 0 
+                            ? `${((cumulativeData.reduce((acc, d) => acc + d.hourlyReturn, 0) / cumulativeData.length) * 24 * 365).toFixed(2)}%`
+                            : '0.00%'
+                          }
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </TabsContent>
+          </Tabs>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}

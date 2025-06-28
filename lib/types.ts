@@ -124,3 +124,15 @@ export interface ViewState {
   selectedOpportunity: ArbitrageOpportunity | null;
   timeRange: number;
 }
+
+export interface ArbitrageOpportunity {
+  asset: string;
+  driftData: PlatformData;
+  hyperliquidData: PlatformData;
+  lighterData: PlatformData;
+  maxSpread: number;
+  currentAPR: number;
+  bestStrategy: string;
+  openInterest: number;
+  maxPriceDeviation: number;
+}
