@@ -15,6 +15,7 @@ interface ArbitrageOpportunity {
   driftData: { rate: number; available: boolean };
   hyperliquidData: { rate: number; available: boolean };
   lighterData: { rate: number; available: boolean };
+  gmxData: { rate: number; available: boolean };
   maxSpread: number;
   currentAPR: number;
   bestStrategy: string;
@@ -150,6 +151,13 @@ async function fetchLighterHistoricalRates(marketId: number, days: number): Prom
   }
 }
 
+async function fetchGMXHistoricalRates(asset: string, days: number): Promise<FundingDataPoint[]> {
+  // GMX doesn't provide historical funding rate data via API
+  // Return empty array to handle gracefully in the UI
+  console.log(`GMX historical data not available for ${asset} (${days} days)`);
+  return [];
+}
+
 // Custom tooltip component
 const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
@@ -235,18 +243,21 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
             promises.push(fetchLighterHistoricalRates(marketId, days));
           }
         }
-
-        // GMX has no historical API; push empty array to maintain alignment
+        
         if (strategyPlatforms.includes('gmx')) {
-          promises.push(Promise.resolve([] as FundingDataPoint[]));
+          promises.push(fetchGMXHistoricalRates(opportunity.asset, days));
         }
         
         const results = await Promise.all(promises);
 
+
         // Merge all data points by timestamp
         const dataMap = new Map<number, FundingDataPoint>();
         
-        results.forEach((platformData) => {
+        results.forEach((platformData, ) => {
+          // Skip empty results (like GMX)
+          if (!platformData || platformData.length === 0) return;
+          
           platformData.forEach(point => {
             const existing = dataMap.get(point.timestamp) || {
               timestamp: point.timestamp,
@@ -265,22 +276,40 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
         
         // Calculate spread for each data point
         mergedData.forEach(point => {
-          let longRate: number | null = null;
-          let shortRate: number | null = null;
+          let longRate = 0;
+          let shortRate = 0;
+          let hasRequiredData = true;
           
           Object.entries(platformPositions).forEach(([platform, position]) => {
-            const rate = point[platform as keyof FundingDataPoint] as number | undefined;
-            if (rate === undefined) return; // ignore missing data
-            if (position === 'long') {
-              longRate = rate;
+            if (platform === 'spot') {
+              // Spot always has a rate of 0
+              if (position === 'long') longRate = 0;
+              else shortRate = 0;
             } else {
-              shortRate = rate;
+              const rate = point[platform as keyof FundingDataPoint] as number;
+              // If a required platform (GMX) has no data, mark as incomplete
+              if (platform === 'gmx' && rate === undefined) {
+                hasRequiredData = false;
+                return;
+              }
+              if (rate !== undefined) {
+                if (position === 'long') {
+                  longRate = rate;
+                } else {
+                  shortRate = rate;
+                }
+              }
             }
           });
           
-          if (longRate !== null && shortRate !== null) {
+          // Only calculate spread if we have all required data
+          if (hasRequiredData) {
             // Spread = Short funding rate - Long funding rate
+            // When positive, we earn from the spread
             point.spread = shortRate - longRate;
+          } else {
+            // Don't calculate spread if GMX data is missing
+            point.spread = undefined;
           }
         });
         
@@ -304,6 +333,9 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
     const performanceData: CumulativeDataPoint[] = [];
     
     fundingData.forEach(point => {
+      // Skip points where spread couldn't be calculated (e.g., missing GMX data)
+      if (point.spread === undefined) return;
+      
       const hourlyReturn = point.spread || 0;
       cumulativeReturn += hourlyReturn;
       
@@ -320,10 +352,10 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
 
   // Chart colors
   const chartColors = {
-    drift: '#8b5cf6',
-    hyperliquid: '#3b82f6',
+    drift: '#ec4899', // Pink
+    hyperliquid: '#8b5cf6', // Purple
     lighter: '#10b981',
-    gmx: '#f97316',
+    gmx: '#3b82f6', // Blue
     spot: '#6b7280',
     spread: '#f59e0b',
     cumulative: '#ef4444'
@@ -360,6 +392,18 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
             </Alert>
           )}
           
+          {strategyPlatforms.includes('gmx') && (
+            <Alert className="mb-4">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>
+                Note: GMX historical funding rate data is not available via API. 
+                {Object.keys(platformPositions).length <= 2 
+                  ? " Performance metrics cannot be calculated for this strategy."
+                  : " GMX data is excluded from historical calculations."}
+              </AlertDescription>
+            </Alert>
+          )}
+          
           <Tabs value={timeRange} onValueChange={(v) => setTimeRange(v as any)}>
             <TabsList className="mb-4">
               <TabsTrigger value="24h">24 Hours</TabsTrigger>
@@ -375,11 +419,19 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
               ) : (
                 <>
                   {/* Historical Funding Rates Chart */}
-                  <div>
-                    <h3 className="text-lg font-semibold mb-4">Historical Funding Rates (Hourly %)</h3>
-                    <div className="h-[400px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={fundingData}>
+                  {fundingData.length === 0 ? (
+                    <div className="text-center py-12 border rounded-lg bg-muted/10">
+                      <AlertCircle className="h-8 w-8 mx-auto mb-4 text-muted-foreground" />
+                      <p className="text-muted-foreground">
+                        No historical funding rate data available for this asset.
+                      </p>
+                    </div>
+                  ) : (
+                    <div>
+                      <h3 className="text-lg font-semibold mb-4">Historical Funding Rates (Hourly %)</h3>
+                      <div className="h-[400px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={fundingData}>
                           <CartesianGrid strokeDasharray="3 3" />
                           <XAxis 
                             dataKey="timestamp"
@@ -462,98 +514,101 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
                               connectNulls
                             />
                           )}
-                          
-                          {/* <Line 
-                            type="monotone" 
-                            dataKey="spread" 
-                            stroke={chartColors.spread}
-                            name="Spread (Profit)"
-                            strokeWidth={1}
-                            dot={false}
-                          /> */}
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
+                )}
                   
                   {/* Cumulative Strategy Performance Chart */}
-                  <div>
-                    <h3 className="text-lg font-semibold mb-4">Cumulative Strategy Performance</h3>
-                    <div className="h-[400px]">
-                      <ResponsiveContainer width="100%" height="100%">
-                        <LineChart data={cumulativeData}>
-                          <CartesianGrid strokeDasharray="3 3" />
-                          <XAxis 
-                            dataKey="timestamp"
-                            tick={{ fontSize: 12 }}
-                            angle={-45}
-                            textAnchor="end"
-                            height={60}
-                            type="number"
-                            domain={['dataMin', 'dataMax']}
-                            tickFormatter={(value: number) => {
-                              const d = new Date(value);
-                              return timeRange === '24h'
-                                ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                                : `${d.getMonth() + 1}/${d.getDate()}`;
-                            }}
-                          />
-                          <YAxis 
-                            label={{ value: 'Cumulative Return (%)', angle: -90, position: 'insideLeft' }}
-                          />
-                          <Tooltip content={<CustomTooltip />} />
-                          <Legend />
-                          
-                          <Line 
-                            type="monotone" 
-                            dataKey="cumulativeReturn" 
-                            stroke={chartColors.cumulative}
-                            name="Cumulative Return"
-                            strokeWidth={1}
-                            dot={false}
-                          />
-                        </LineChart>
-                      </ResponsiveContainer>
+                  {strategyPlatforms.includes('gmx') && Object.keys(platformPositions).length <= 2 ? (
+                    <div className="text-center py-12 border rounded-lg bg-muted/10">
+                      <AlertCircle className="h-8 w-8 mx-auto mb-4 text-muted-foreground" />
+                      <p className="text-muted-foreground">
+                        Historical performance cannot be calculated because GMX does not provide historical funding rate data.
+                      </p>
                     </div>
-                  </div>
+                  ) : (
+                    <div>
+                      <h3 className="text-lg font-semibold mb-4">Cumulative Strategy Performance</h3>
+                      <div className="h-[400px]">
+                        <ResponsiveContainer width="100%" height="100%">
+                          <LineChart data={cumulativeData}>
+                            <CartesianGrid strokeDasharray="3 3" />
+                            <XAxis 
+                              dataKey="timestamp"
+                              tick={{ fontSize: 12 }}
+                              angle={-45}
+                              textAnchor="end"
+                              height={60}
+                              type="number"
+                              domain={['dataMin', 'dataMax']}
+                              tickFormatter={(value: number) => {
+                                const d = new Date(value);
+                                return timeRange === '24h'
+                                  ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                                  : `${d.getMonth() + 1}/${d.getDate()}`;
+                              }}
+                            />
+                            <YAxis 
+                              label={{ value: 'Cumulative Return (%)', angle: -90, position: 'insideLeft' }}
+                            />
+                            <Tooltip content={<CustomTooltip />} />
+                            <Legend />
+                            
+                            <Line 
+                              type="monotone" 
+                              dataKey="cumulativeReturn" 
+                              stroke={chartColors.cumulative}
+                              name="Cumulative Return"
+                              strokeWidth={1}
+                              dot={false}
+                            />
+                          </LineChart>
+                        </ResponsiveContainer>
+                      </div>
+                    </div>
+                  )}
                   
                   {/* Summary Statistics */}
-                  <div className="mt-6 p-4 bg-muted rounded-lg">
-                    <h3 className="font-semibold mb-2">Performance Summary</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                      <div>
-                        <p className="text-muted-foreground">Total Return</p>
-                        <p className="font-semibold">
-                          {cumulativeData.length > 0 
-                            ? `${cumulativeData[cumulativeData.length - 1].cumulativeReturn.toFixed(2)}%`
-                            : '0.00%'
-                          }
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Avg Hourly Return</p>
-                        <p className="font-semibold">
-                          {cumulativeData.length > 0 
-                            ? `${(cumulativeData.reduce((acc, d) => acc + d.hourlyReturn, 0) / cumulativeData.length).toFixed(4)}%`
-                            : '0.0000%'
-                          }
-                        </p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Data Points</p>
-                        <p className="font-semibold">{fundingData.length}</p>
-                      </div>
-                      <div>
-                        <p className="text-muted-foreground">Annualized Return</p>
-                        <p className="font-semibold">
-                          {cumulativeData.length > 0 
-                            ? `${((cumulativeData.reduce((acc, d) => acc + d.hourlyReturn, 0) / cumulativeData.length) * 24 * 365).toFixed(2)}%`
-                            : '0.00%'
-                          }
-                        </p>
+                  {!(strategyPlatforms.includes('gmx') && Object.keys(platformPositions).length <= 2) && (
+                    <div className="mt-6 p-4 bg-muted rounded-lg">
+                      <h3 className="font-semibold mb-2">Performance Summary</h3>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                        <div>
+                          <p className="text-muted-foreground">Total Return</p>
+                          <p className="font-semibold">
+                            {cumulativeData.length > 0 
+                              ? `${cumulativeData[cumulativeData.length - 1].cumulativeReturn.toFixed(2)}%`
+                              : '0.00%'
+                            }
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Avg Hourly Return</p>
+                          <p className="font-semibold">
+                            {cumulativeData.length > 0 
+                              ? `${(cumulativeData.reduce((acc, d) => acc + d.hourlyReturn, 0) / cumulativeData.length).toFixed(4)}%`
+                              : '0.0000%'
+                            }
+                          </p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Data Points</p>
+                          <p className="font-semibold">{fundingData.length}</p>
+                        </div>
+                        <div>
+                          <p className="text-muted-foreground">Annualized Return</p>
+                          <p className="font-semibold">
+                            {cumulativeData.length > 0 
+                              ? `${((cumulativeData.reduce((acc, d) => acc + d.hourlyReturn, 0) / cumulativeData.length) * 24 * 365).toFixed(2)}%`
+                              : '0.00%'
+                            }
+                          </p>
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </>
               )}
             </TabsContent>
