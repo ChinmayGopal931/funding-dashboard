@@ -220,6 +220,46 @@ const BASE_COLORS: Record<string, string> = {
   AVAX: "#45b7d1",
 };
 
+// GMX Market interface and fetch function
+export interface GMXMarket {
+  name: string;
+  netRateLong: string;
+  netRateShort: string;
+  fundingRateLong: string;
+  fundingRateShort: string;
+  // optional fields that may exist depending on endpoint version
+  indexPrice?: string;
+  volume24h?: string;
+  openInterestLong?: string;
+  openInterestShort?: string;
+  availableLiquidityLong?: string;
+  availableLiquidityShort?: string;
+}
+
+export const fetchGMXMarkets = async (): Promise<GMXMarket[]> => {
+  try {
+    const res = await fetch('https://arbitrum-api.gmxinfra.io/markets/info');
+    if (!res.ok) throw new Error(`HTTP error! status: ${res.status}`);
+    const data = await res.json();
+    return (data.markets || []) as GMXMarket[];
+  } catch (err) {
+    console.error('Error fetching GMX markets:', err);
+    return [];
+  }
+};
+
+// Helper to convert GMX per-second fixed-point (1e30) rate into an 8-hour funding decimal (e.g. 0.001 = 0.1%)
+export function gmxRate8h(raw: string | number): number {
+  // Raw is stored as an ANNUAL rate in fixed-point. Some markets use 30-decimals, others 36-decimals.
+  const rawStr = raw.toString();
+  // Detect precision by digit length (ignore minus sign)
+  const digits = rawStr.startsWith('-') ? rawStr.slice(1) : rawStr;
+  const precision = digits.length <= 30 ? 30 : 36;
+
+  const annualDecimal = parseFloat(rawStr) / Math.pow(10, precision); // e.g. 0.9245 => 92.45%
+  // 8-hour decimal = annual / 1095 ( 8760 / 8 )
+  return annualDecimal / 1095;
+}
 
 export const LIGHTER_MARKET_IDS: { [key: string]: number } = {
   'ETH': 0,

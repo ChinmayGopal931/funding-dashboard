@@ -9,7 +9,7 @@ import { Tooltip as TooltipComponent, TooltipContent, TooltipProvider, TooltipTr
 import { Badge } from '@/components/ui/badge';
 import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
 import { useWebSocket } from '@/contexts/WebSocketProvider';
-import { fetchDriftContracts, fetchHyperliquidData, LIGHTER_MARKET_IDS } from '@/lib/utils';
+import { fetchDriftContracts, fetchHyperliquidData, fetchGMXMarkets, LIGHTER_MARKET_IDS, GMXMarket, gmxRate8h } from '@/lib/utils';
 import HistoricalAnalysis from './HistoricalAnalysis';
 
 // Interfaces
@@ -79,6 +79,7 @@ interface ArbitrageOpportunity {
   driftData: PlatformData;
   hyperliquidData: PlatformData;
   lighterData: PlatformData;
+  gmxData: PlatformData;
   maxSpread: number;
   currentAPR: number;
   bestStrategy: string;
@@ -86,6 +87,7 @@ interface ArbitrageOpportunity {
   openInterestDrift: number;
   openInterestHyperliquid: number;
   openInterestLighter: number;
+  gmxMarket?: GMXMarket;
   maxPriceDeviation: number;
   driftContract?: DriftContract;
   hyperliquidContext?: HyperliquidAssetContext;
@@ -95,6 +97,7 @@ interface ArbitrageOpportunity {
 interface ExternalData {
   drift: DriftContract[];
   hyperliquid: { assets: HyperliquidAsset[], contexts: HyperliquidAssetContext[] };
+  gmx: GMXMarket[];
 }
 
 // Memoized table row component
@@ -130,6 +133,13 @@ const OpportunityRow = memo(({
           opportunity.hyperliquidData.rate < 0 ? "text-red-600" : ""
         }`}>
           {opportunity.hyperliquidData.available ? formatRate(opportunity.hyperliquidData.rate) : "-"}
+        </td>
+        <td className={`px-4 py-3 ${
+          !opportunity.gmxData.available ? "" :
+          opportunity.gmxData.rate > 0 ? "text-green-600" : 
+          opportunity.gmxData.rate < 0 ? "text-red-600" : ""
+        }`}>
+          {opportunity.gmxData.available ? formatRate(opportunity.gmxData.rate) : "-"}
         </td>
         <td className={`px-4 py-3 ${
           !opportunity.lighterData.available ? "" :
@@ -185,6 +195,25 @@ const OpportunityRow = memo(({
           </ul>
         </div>
       )}
+      {opportunity.gmxMarket && (
+        <div>
+          <h4 className="font-medium text-sm mb-1">GMX</h4>
+          <ul className="space-y-0.5">
+            <li>Funding: {formatRate(opportunity.gmxData.rate)}</li>
+            {opportunity.gmxMarket.openInterestLong && opportunity.gmxMarket.openInterestShort && (
+              <li>
+                OI L/S: {formatSmallOI(parseFloat(opportunity.gmxMarket.openInterestLong) / 1e30)} / {formatSmallOI(parseFloat(opportunity.gmxMarket.openInterestShort) / 1e30)}
+              </li>
+            )}
+            {opportunity.gmxMarket.indexPrice && (
+              <li>Index Px: {(parseFloat(opportunity.gmxMarket.indexPrice) / 1e30).toFixed(2)}</li>
+            )}
+            {opportunity.gmxMarket.volume24h && (
+              <li>24h Vol: {(parseFloat(opportunity.gmxMarket.volume24h) / 1e30).toLocaleString(undefined, { maximumFractionDigits: 0 })}</li>
+            )}
+          </ul>
+        </div>
+      )}
       {opportunity.lighterStats && (
         <div>
           <h4 className="font-medium text-sm mb-1">Lighter</h4>
@@ -208,7 +237,8 @@ export default function FundingArbitrageDashboard() {
   const [refreshing, setRefreshing] = useState(false);
   const [externalData, setExternalData] = useState<ExternalData>({
     drift: [],
-    hyperliquid: { assets: [], contexts: [] }
+    hyperliquid: { assets: [], contexts: [] },
+    gmx: []
   });
   const [lastUpdate, setLastUpdate] = useState<Date | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -221,14 +251,16 @@ export default function FundingArbitrageDashboard() {
   const fetchExternalData = useCallback(async () => {
     try {
       setError(null);
-      const [driftContracts, hyperliquidData] = await Promise.all([
+      const [driftContracts, hyperliquidData, gmxMarkets] = await Promise.all([
         fetchDriftContracts(),
-        fetchHyperliquidData()
+        fetchHyperliquidData(),
+        fetchGMXMarkets()
       ]);
       
       setExternalData({
         drift: driftContracts,
-        hyperliquid: hyperliquidData
+        hyperliquid: hyperliquidData,
+        gmx: gmxMarkets
       });
       setLastUpdate(new Date());
     } catch (error) {
@@ -238,7 +270,7 @@ export default function FundingArbitrageDashboard() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [fetchDriftContracts, fetchHyperliquidData]);
+  }, [fetchDriftContracts, fetchHyperliquidData, fetchGMXMarkets]);
 
   // Calculate opportunities - memoized based on data dependencies
   const opportunities = useMemo(() => {
@@ -259,6 +291,12 @@ export default function FundingArbitrageDashboard() {
       allAssets.add(asset);
     });
 
+    // GMX assets
+    externalData.gmx.forEach(market => {
+      const symbol = market.name.split('/')[0].toUpperCase();
+      allAssets.add(symbol);
+    });
+
     // Initialize opportunities for all assets
     allAssets.forEach(asset => {
       opportunityMap.set(asset, {
@@ -266,6 +304,7 @@ export default function FundingArbitrageDashboard() {
         driftData: { rate: 0, available: false },
         hyperliquidData: { rate: 0, available: false },
         lighterData: { rate: 0, available: false },
+        gmxData: { rate: 0, available: false },
         maxSpread: 0,
         currentAPR: 0,
         bestStrategy: '',
@@ -277,6 +316,7 @@ export default function FundingArbitrageDashboard() {
         driftContract: undefined,
         hyperliquidContext: undefined,
         lighterStats: undefined,
+        gmxMarket: undefined,
       });
     });
 
@@ -325,6 +365,24 @@ export default function FundingArbitrageDashboard() {
       }
     });
 
+    // Process GMX data
+    externalData.gmx.forEach(market => {
+      const symbol = market.name.split('/')[0].toUpperCase();
+
+      const rateLong = gmxRate8h(market.netRateLong || market.fundingRateLong || '0');
+      const rateShort = gmxRate8h(market.netRateShort || market.fundingRateShort || '0');
+
+      // Choose the rate corresponding to holding a long perp position (positive means longs receive)
+      // Here we take negative of rateShort since GMX defines short side rate; adjust as needed
+      const fundingRate = rateLong !== 0 ? rateLong : -rateShort;
+
+      const opp = opportunityMap.get(symbol);
+      if (opp) {
+        opp.gmxData = { rate: fundingRate, available: true };
+        opp.gmxMarket = market;
+      }
+    });
+
     // Calculate max spreads and best strategies
     opportunityMap.forEach(opp => {
       const availablePlatforms: { name: string; rate: number }[] = [];
@@ -338,6 +396,10 @@ export default function FundingArbitrageDashboard() {
       
       if (opp.hyperliquidData.available) {
         availablePlatforms.push({ name: 'Hyperliquid', rate: opp.hyperliquidData.rate });
+      }
+      
+      if (opp.gmxData.available) {
+        availablePlatforms.push({ name: 'GMX', rate: opp.gmxData.rate });
       }
       
       if (opp.lighterData.available) {
@@ -407,7 +469,7 @@ export default function FundingArbitrageDashboard() {
 
     // Filter out opportunities with no available platforms (except spot) and sort by APR
     const opportunitiesArray = Array.from(opportunityMap.values())
-      .filter(opp => opp.driftData.available || opp.hyperliquidData.available || opp.lighterData.available)
+      .filter(opp => opp.driftData.available || opp.hyperliquidData.available || opp.gmxData.available || opp.lighterData.available)
       .sort((a, b) => b.currentAPR - a.currentAPR);
     
     return opportunitiesArray;
@@ -468,7 +530,7 @@ export default function FundingArbitrageDashboard() {
             <div>
               <CardTitle className="text-2xl">Funding Rate Arbitrage Dashboard</CardTitle>
               <CardDescription>
-                Delta-neutral strategies across Drift, Hyperliquid, and Lighter
+                Delta-neutral strategies across Drift, Hyperliquid, GMX, and Lighter
               </CardDescription>
             </div>
             <div className="flex items-center gap-2">
@@ -527,6 +589,14 @@ export default function FundingArbitrageDashboard() {
                   <th className="px-4 py-3 text-left text-sm font-medium">
                     <TooltipProvider>
                       <TooltipComponent>
+                        <TooltipTrigger>GMX Rate</TooltipTrigger>
+                        <TooltipContent>Hourly funding rate (approx)</TooltipContent>
+                      </TooltipComponent>
+                    </TooltipProvider>
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">
+                    <TooltipProvider>
+                      <TooltipComponent>
                         <TooltipTrigger>Lighter Rate</TooltipTrigger>
                         <TooltipContent>Hourly funding rate</TooltipContent>
                       </TooltipComponent>
@@ -556,13 +626,13 @@ export default function FundingArbitrageDashboard() {
               <tbody>
                 {loading ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-8">
+                    <td colSpan={10} className="text-center py-8">
                       <Loader2 className="h-8 w-8 animate-spin mx-auto" />
                     </td>
                   </tr>
                 ) : opportunities.length === 0 ? (
                   <tr>
-                    <td colSpan={9} className="text-center py-8 text-muted-foreground">
+                    <td colSpan={10} className="text-center py-8 text-muted-foreground">
                       No opportunities found
                     </td>
                   </tr>
@@ -592,7 +662,7 @@ export default function FundingArbitrageDashboard() {
             <div className="text-sm text-muted-foreground space-y-1">
               <p>• <strong>Buy Spot/Short</strong>: Buy spot asset on DEX, short perpetual futures</p>
               <p>• <strong>Long/Short</strong>: Long perpetual on one protocol, short on another</p>
-              <p>• Funding rates shown are per funding period (8 hours for most, 1 hour for Lighter)</p>
+              <p>• Funding rates shown are per funding period (8 hours for most, 1 hour for Lighter and GMX)</p>
               <p>• APR calculation assumes continuous compounding of funding payments</p>
               <p>• &rdquo;-&rdquo; indicates market not available on that platform</p>
             </div>

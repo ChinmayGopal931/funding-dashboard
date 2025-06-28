@@ -34,6 +34,7 @@ interface FundingDataPoint {
   drift?: number;
   hyperliquid?: number;
   lighter?: number;
+  gmx?: number;
   spot: number;
   spread?: number;
 }
@@ -134,8 +135,6 @@ async function fetchLighterHistoricalRates(marketId: number, days: number): Prom
     
     const data = await response.json();
     const fundings = data.fundings || [];
-
-    console.log("fundings", fundings)
     
     return fundings.map((funding: any) => ({
       timestamp: funding.timestamp * 1000, // Convert to milliseconds
@@ -182,6 +181,7 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
     if (strategy.includes('Drift')) platforms.push('drift');
     if (strategy.includes('Hyperliquid')) platforms.push('hyperliquid');
     if (strategy.includes('Lighter')) platforms.push('lighter');
+    if (strategy.includes('GMX')) platforms.push('gmx');
     if (strategy.includes('Spot')) platforms.push('spot');
     
     return platforms;
@@ -235,10 +235,13 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
             promises.push(fetchLighterHistoricalRates(marketId, days));
           }
         }
+
+        // GMX has no historical API; push empty array to maintain alignment
+        if (strategyPlatforms.includes('gmx')) {
+          promises.push(Promise.resolve([] as FundingDataPoint[]));
+        }
         
         const results = await Promise.all(promises);
-
-        console.log("resultss", results)
 
         // Merge all data points by timestamp
         const dataMap = new Map<number, FundingDataPoint>();
@@ -262,11 +265,12 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
         
         // Calculate spread for each data point
         mergedData.forEach(point => {
-          let longRate = 0;
-          let shortRate = 0;
+          let longRate: number | null = null;
+          let shortRate: number | null = null;
           
           Object.entries(platformPositions).forEach(([platform, position]) => {
-            const rate = point[platform as keyof FundingDataPoint] as number || 0;
+            const rate = point[platform as keyof FundingDataPoint] as number | undefined;
+            if (rate === undefined) return; // ignore missing data
             if (position === 'long') {
               longRate = rate;
             } else {
@@ -274,9 +278,10 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
             }
           });
           
-          // Spread = Short funding rate - Long funding rate
-          // When positive, we earn from the spread
-          point.spread = shortRate - longRate;
+          if (longRate !== null && shortRate !== null) {
+            // Spread = Short funding rate - Long funding rate
+            point.spread = shortRate - longRate;
+          }
         });
         
         setFundingData(mergedData);
@@ -318,6 +323,7 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
     drift: '#8b5cf6',
     hyperliquid: '#3b82f6',
     lighter: '#10b981',
+    gmx: '#f97316',
     spot: '#6b7280',
     spread: '#f59e0b',
     cumulative: '#ef4444'
@@ -426,6 +432,18 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
                               dataKey="lighter" 
                               stroke={chartColors.lighter}
                               name={`Lighter (${platformPositions.lighter})`}
+                              strokeWidth={1}
+                              dot={false}
+                              connectNulls
+                            />
+                          )}
+                          
+                          {strategyPlatforms.includes('gmx') && (
+                            <Line 
+                              type="monotone" 
+                              dataKey="gmx" 
+                              stroke={chartColors.gmx}
+                              name={`GMX (${platformPositions.gmx})`}
                               strokeWidth={1}
                               dot={false}
                               connectNulls
