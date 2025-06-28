@@ -325,7 +325,7 @@ export default function FundingArbitrageDashboard() {
     externalData.drift.forEach(contract => {
       const asset = contract.base_currency.toUpperCase();
       const fundingRate = parseFloat(contract.funding_rate || '0') / 100;
-      const openInterest = parseFloat(contract.open_interest || '0');
+      const openInterest = parseFloat(contract.open_interest || '0') * parseFloat(contract.last_price || '0');
       
       const opp = opportunityMap.get(asset)!;
       opp.driftData = { rate: fundingRate, available: true };
@@ -341,7 +341,7 @@ export default function FundingArbitrageDashboard() {
       
       const assetName = asset.name.toUpperCase();
       const fundingRate = parseFloat(context.funding || '0') * 10;
-      const openInterest = parseFloat(context.openInterest || '0');
+      const openInterest = parseFloat(context.openInterest || '0') * parseFloat(context.midPx || '0');
       
       const opp = opportunityMap.get(assetName);
       if (opp) {
@@ -523,9 +523,6 @@ export default function FundingArbitrageDashboard() {
       />
     );
   }
-
-
-  console.log(externalData, opportunities)
 
 
   return (
