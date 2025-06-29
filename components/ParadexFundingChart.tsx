@@ -6,7 +6,25 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Loader2, RefreshCw } from 'lucide-react';
 
-type TimeRange = '24h' | '7d' | '30d';
+const COLORS: Record<string, string> = {
+  'SOL-USD-PERP': '#8b5cf6',
+  'ETH-USD-PERP': '#627eea',
+  'BTC-USD-PERP': '#f7931a',
+  'JTO-USD-PERP': '#06d6a0',
+  'WIF-USD-PERP': '#f59e0b',
+  'JUP-USD-PERP': '#22c55e',
+  'PYTH-USD-PERP': '#ef4444',
+  'BONK-USD-PERP': '#ff6b6b',
+  'RNDR-USD-PERP': '#4ecdc4',
+  'AVAX-USD-PERP': '#45b7d1'
+};
+
+// Define time period options similar to DriftFundingChart
+const TIME_PERIODS = [
+  { value: '24h', label: '24 Hours', hours: 24 },
+  { value: '7d', label: '7 Days', hours: 24 * 7 },
+  { value: '30d', label: '30 Days', hours: 24 * 30 },
+];
 
 interface ParadexMarket {
   symbol: string;
@@ -73,46 +91,29 @@ async function fetchParadexFundingHistory(
   market: string, 
   startTime?: number, 
   endTime?: number,
-  timeRange?: TimeRange
+  timePeriod?: typeof TIME_PERIODS[number]
 ): Promise<ParadexFundingDataPoint[]> {
-  const allData: ParadexFundingDataPoint[] = [];
-  let cursor: string | null = null;
-  const pageSize = 5000; // Max allowed
-  
   try {
-    do {
-      const params = new URLSearchParams({
-        market,
-        page_size: pageSize.toString(),
-      });
-      
-      if (startTime) params.append('start_at', startTime.toString());
-      if (endTime) params.append('end_at', endTime.toString());
-      if (cursor) params.append('cursor', cursor);
-      
-      const response = await fetch(
-        `https://api.prod.paradex.trade/v1/funding/data?${params}`,
-        { headers: { 'Accept': 'application/json' } }
-      );
-      
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      
-      const data: ParadexFundingResponse = await response.json();
-      allData.push(...(data.results || []));
-      
-      // Continue if there's more data and we haven't reached our limit
-      cursor = data.next;
-      
-      // Stop if we have enough data for the time range
-      // Assuming ~288 data points per day with 5-minute intervals
-      const maxDataPoints = timeRange === '24h' ? 288 : timeRange === '7d' ? 2016 : 8640;
-      if (allData.length > maxDataPoints) break;
-      
-    } while (cursor);
+    // Set a large page size to get as much data as possible in one request
+    const params = new URLSearchParams({
+      market,
+      page_size: '5000', // Max allowed
+    });
     
-    return allData;
+    if (startTime) params.append('start_at', startTime.toString());
+    if (endTime) params.append('end_at', endTime.toString());
+    
+    const response = await fetch(
+      `https://api.prod.paradex.trade/v1/funding/data?${params}`,
+      { headers: { 'Accept': 'application/json' } }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+    
+    const data: ParadexFundingResponse = await response.json();
+    return data.results || [];
   } catch (error) {
     console.error(`Error fetching Paradex funding data for ${market}:`, error);
     return [];
@@ -125,7 +126,7 @@ function ParadexFundingRatesChart() {
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [availableMarkets, setAvailableMarkets] = useState<ParadexMarket[]>([]);
   const [selectedMarkets, setSelectedMarkets] = useState<string[]>([]);
-  const [timeRange, setTimeRange] = useState<TimeRange>('30d');
+  const [timePeriod, setTimePeriod] = useState<typeof TIME_PERIODS[number]>(TIME_PERIODS[2]);
 
   const processMultiMarketData = (marketDataMap: Record<string, ParadexFundingDataPoint[]>): ProcessedDataPoint[] => {
     // Step 1: Process each market's data into a map
@@ -195,26 +196,9 @@ function ParadexFundingRatesChart() {
 
     setLoading(true);
     try {
-      // Calculate time range based on selection
-      const endTime = Date.now();
-      let startTime: number;
-      
-      switch (timeRange) {
-        case '24h':
-          startTime = endTime - (24 * 60 * 60 * 1000); // 24 hours
-          break;
-        case '7d':
-          startTime = endTime - (7 * 24 * 60 * 60 * 1000); // 7 days
-          break;
-        case '30d':
-        default:
-          startTime = endTime - (30 * 24 * 60 * 60 * 1000); // 30 days
-          break;
-      }
-      
       // Fetch data for selected markets in parallel
       const promises = selectedMarkets.map(symbol => 
-        fetchParadexFundingHistory(symbol, startTime, endTime, timeRange).then(data => ({ 
+        fetchParadexFundingHistory(symbol).then(data => ({ 
           market: symbol, 
           data 
         }))
@@ -225,7 +209,11 @@ function ParadexFundingRatesChart() {
       // Convert to market data map
       const marketDataMap: Record<string, ParadexFundingDataPoint[]> = {};
       results.forEach(({ market, data }) => {
-        marketDataMap[market] = data;
+        // Filter data based on the selected time period
+        const now = Date.now();
+        const cutoffTime = now - (timePeriod.hours * 60 * 60 * 1000);
+        const filteredData = data.filter(item => item.created_at >= cutoffTime);
+        marketDataMap[market] = filteredData;
       });
       
       const processedData = processMultiMarketData(marketDataMap);
@@ -262,9 +250,11 @@ function ParadexFundingRatesChart() {
 
   useEffect(() => {
     fetchAllData();
-  }, [selectedMarkets, timeRange]);
+  }, [selectedMarkets, timePeriod]);
 
   const generateColor = (symbol: string) => {
+    if (COLORS[symbol]) return COLORS[symbol];
+    
     // Generate a consistent color based on the symbol
     const hash = symbol.split('').reduce((a, b) => {
       a = ((a << 5) - a) + b.charCodeAt(0);
@@ -307,16 +297,17 @@ function ParadexFundingRatesChart() {
     );
   };
 
-  // Calculate 8-hour rate from current funding rate for display
-  const format8HourRate = (rate: string) => {
+  // Format funding rate for display
+  const formatFundingRate = (rate: string) => {
     // Paradex funding rate is already per 8 hours
     return (parseFloat(rate) * 100).toFixed(4);
   };
 
-  // Calculate APR from 8-hour rate
+  // Calculate APR from funding rate
   const calculateAPR = (rate: number) => {
-    // rate is per 8 hours, so multiply by 3 for daily, then by 365 for annual
-    return rate * 3 * 365;
+    // Convert 8-hour rate to hourly rate (divide by 8), then multiply by 24 for daily, then by 365 for annual
+    // This matches Drift's calculation: hourly_rate * 24 * 365 * 100
+    return (rate / 8) * 24 * 365;
   };
 
   return (
@@ -326,32 +317,20 @@ function ParadexFundingRatesChart() {
           <CardTitle className="flex items-center justify-between">
             Paradex Funding Rates Analysis - Top 10 Markets
             <div className="flex items-center gap-2">
-              <div className="flex gap-1 bg-gray-100 p-1 rounded-md">
-                <Button
-                  onClick={() => setTimeRange('24h')}
-                  size="sm"
-                  variant={timeRange === '24h' ? 'default' : 'ghost'}
-                  className={`px-3 ${timeRange === '24h' ? 'bg-purple-600 hover:bg-purple-700 text-white' : ''}`}
-                >
-                  24H
-                </Button>
-                <Button
-                  onClick={() => setTimeRange('7d')}
-                  size="sm"
-                  variant={timeRange === '7d' ? 'default' : 'ghost'}
-                  className={`px-3 ${timeRange === '7d' ? 'bg-purple-600 hover:bg-purple-700 text-white' : ''}`}
-                >
-                  7D
-                </Button>
-                <Button
-                  onClick={() => setTimeRange('30d')}
-                  size="sm"
-                  variant={timeRange === '30d' ? 'default' : 'ghost'}
-                  className={`px-3 ${timeRange === '30d' ? 'bg-purple-600 hover:bg-purple-700 text-white' : ''}`}
-                >
-                  30D
-                </Button>
-              </div>
+              <select
+                value={timePeriod.value}
+                onChange={(e) => {
+                  const period = TIME_PERIODS.find(p => p.value === e.target.value) || TIME_PERIODS[0];
+                  setTimePeriod(period);
+                }}
+                className="text-sm border rounded-md p-1"
+              >
+                {TIME_PERIODS.map((period) => (
+                  <option key={period.value} value={period.value}>
+                    {period.label}
+                  </option>
+                ))}
+              </select>
               <Button 
                 onClick={fetchAllData} 
                 disabled={loading}
@@ -367,7 +346,7 @@ function ParadexFundingRatesChart() {
             </div>
           </CardTitle>
           <CardDescription>
-            Last {timeRange === '24h' ? '24 hours' : timeRange === '7d' ? '7 days' : '30 days'} of funding rates (8-hour rates in %). Markets sorted by highest current funding rate.
+            Last {timePeriod.label} of funding rates (hourly rates in %). Markets sorted by highest current funding rate.
             {lastUpdate && <span className="ml-2 text-xs">Last updated: {lastUpdate}</span>}
             <div className="mt-3 space-y-2">
               <div className="text-xs font-medium text-gray-700 mb-2">
@@ -376,7 +355,7 @@ function ParadexFundingRatesChart() {
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
                 {availableMarkets.map(market => {
                   const isSelected = selectedMarkets.includes(market.symbol);
-                  const fundingRate8h = format8HourRate(market.funding_rate);
+                  const fundingRate8h = formatFundingRate(market.funding_rate);
                   const fundingRateAPR = calculateAPR(parseFloat(market.funding_rate) * 100).toFixed(1);
                   
                   return (
@@ -385,12 +364,12 @@ function ParadexFundingRatesChart() {
                       onClick={() => toggleMarket(market.symbol)}
                       className={`p-2 text-xs rounded-md border text-left ${
                         isSelected
-                          ? 'bg-purple-100 border-purple-300 text-purple-800'
+                          ? 'bg-blue-100 border-blue-300 text-blue-800'
                           : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
                       }`}
                     >
-                      <div className="font-medium">{market.symbol.replace('-USD-PERP', '')}</div>
-                      <div className="text-xs opacity-75">8h: {fundingRate8h}%</div>
+                      <div className="font-medium">{market.symbol}</div>
+                      <div className="text-xs opacity-75">Rate: {fundingRate8h}%</div>
                       <div className="text-xs opacity-75">APR: {fundingRateAPR}%</div>
                     </button>
                   );
@@ -411,48 +390,37 @@ function ParadexFundingRatesChart() {
                 <LineChart data={data}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-                    dataKey="dateTime"
-                    tickFormatter={(value) => {
-                      const date = new Date(value);
-                      if (timeRange === '24h') {
-                        return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-                      } else if (timeRange === '7d') {
-                        return date.toLocaleDateString([], { day: 'numeric', month: 'short' });
-                      } else {
-                        return date.toLocaleDateString([], { day: 'numeric', month: 'short' });
+                    dataKey="timestamp"
+                    tickFormatter={(timestamp) => {
+                      const date = new Date(timestamp);
+                      const dateStr = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+                      
+                      // Show time only for 24h time period
+                      if (timePeriod.value === '24h') {
+                        const hours = String(date.getHours()).padStart(2, '0');
+                        const minutes = String(date.getMinutes()).padStart(2, '0');
+                        return `${dateStr} ${hours}:${minutes}`;
                       }
+                      
+                      return dateStr;
                     }}
-                    interval={timeRange === '24h' ? 'preserveStartEnd' : timeRange === '7d' ? 48 : 144}
                   />
                   <YAxis 
-                    label={{ value: 'Funding Rate (%/8 hours)', angle: -90, position: 'insideLeft' }}
-                    tickFormatter={(value) => `${value.toFixed(4)}%`}
+                    label={{ value: 'Funding Rate (%/hour)', angle: -90, position: 'insideLeft' }}
+                    tickFormatter={(value) => `${(value / 8).toFixed(4)}%`}
                   />
                   <ChartTooltip 
                     content={({ active, payload, label }) => {
                       if (active && payload && payload.length) {
                         const date = new Date(label);
-                        const formattedDate = timeRange === '24h' 
-                          ? date.toLocaleString([], { 
-                              month: 'short', 
-                              day: 'numeric', 
-                              hour: '2-digit', 
-                              minute: '2-digit' 
-                            })
-                          : date.toLocaleString([], { 
-                              month: 'short', 
-                              day: 'numeric', 
-                              year: 'numeric',
-                              hour: '2-digit',
-                              minute: '2-digit'
-                            });
+                        const formattedDate = new Date(date).toLocaleString();
                         
                         return (
                           <div className="bg-white p-3 border rounded-lg shadow-lg">
                             <p className="font-medium">{formattedDate}</p>
                             {payload.map((entry, index) => (
                               <p key={index} style={{ color: entry.color }}>
-                                {entry.dataKey}: {(entry.value as number)?.toFixed(6)}%/8h
+                                {entry.dataKey}: {((entry.value as number) / 8)?.toFixed(6)}%/h
                               </p>
                             ))}
                           </div>
@@ -509,19 +477,19 @@ function ParadexFundingRatesChart() {
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="space-y-1 text-sm">
-                    <div className="font-medium text-purple-600 mb-2">
-                      Historical ({timeRange === '24h' ? '24h' : timeRange === '7d' ? '7d' : '30d'})
+                    <div className="font-medium text-blue-600 mb-2">
+                      Historical ({timePeriod.value})
                     </div>
-                    <div>Avg: {stats.avg.toFixed(6)}%/8h</div>
-                    <div>Min: {stats.min.toFixed(6)}%/8h</div>
-                    <div>Max: {stats.max.toFixed(6)}%/8h</div>
+                    <div>Avg: {(stats.avg / 8).toFixed(6)}%/h</div>
+                    <div>Min: {(stats.min / 8).toFixed(6)}%/h</div>
+                    <div>Max: {(stats.max / 8).toFixed(6)}%/h</div>
                     <div className="text-xs text-gray-500">
                       APR: {calculateAPR(stats.avg).toFixed(2)}%
                     </div>
                     {marketInfo && (
                       <>
-                        <div className="font-medium text-green-600 mt-3 mb-1">Current</div>
-                        <div>Rate: {format8HourRate(marketInfo.funding_rate)}%/8h</div>
+                        <div className="font-medium text-blue-600 mt-3 mb-1">Current</div>
+                        <div>Rate: {(parseFloat(formatFundingRate(marketInfo.funding_rate)) / 8).toFixed(6)}%/h</div>
                         <div className="text-xs text-gray-500">
                           APR: {calculateAPR(parseFloat(marketInfo.funding_rate) * 100).toFixed(2)}%
                         </div>
@@ -543,15 +511,15 @@ function ParadexFundingRatesChart() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Paradex Strategy Insights</CardTitle>
+          <CardTitle>Paradex Protocol Funding Rates Analysis</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-2 text-sm">
-            <p><strong>Time Range:</strong> Toggle between 24 hours, 7 days, and 30 days of historical data.</p>
+            <p><strong>Time Period:</strong> Toggle between 24 hours, 7 days, and 30 days of historical data.</p>
             <p><strong>Top 10 Selection:</strong> Markets are automatically sorted by highest current funding rates.</p>
             <p><strong>Auto-Selection:</strong> Top 3 markets are pre-selected for immediate analysis.</p>
-            <p><strong>Funding Period:</strong> Paradex uses 8-hour funding periods, paid continuously.</p>
-            <p><strong>APR Formula:</strong> 8-hour rate × 3 × 365 gives the annualized percentage rate.</p>
+            <p><strong>Funding Rate:</strong> Displayed as hourly rates for consistency with other protocols.</p>
+            <p><strong>APR Formula:</strong> Hourly rate × 24 × 365 gives the annualized percentage rate.</p>
             <p><strong>Market Comparison:</strong> Compare rates across markets to identify arbitrage opportunities.</p>
             <p><strong>Risk Assessment:</strong> Higher funding rates may indicate higher volatility and risk.</p>
             <p><strong>Data Source:</strong> Real-time data from Paradex&apos;s public API with historical data.</p>

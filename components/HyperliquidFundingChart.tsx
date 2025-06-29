@@ -73,16 +73,23 @@ async function fetchFundingHistory(coin: string, startTime: number, endTime: num
   }
 }
 
+// Define time period options
+const TIME_PERIODS = [
+  { value: '24h', label: '24 Hours', hours: 24 },
+  { value: '7d', label: '7 Days', hours: 24 * 7 },
+  { value: '21d', label: '21 Days', hours: 24 * 21 },
+];
+
 function FundingRatesChart() {
   const [data, setData] = useState<ProcessedDataPoint[]>([]);
   const [loading, setLoading] = useState<boolean>(false);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
-  const [timeRange, setTimeRange] = useState<number>(7); // days
+  const [timePeriod, setTimePeriod] = useState<typeof TIME_PERIODS[number]>(TIME_PERIODS[1]); // default to 7 days
 
   const fetchAllData = async (): Promise<void> => {
     setLoading(true);
     const endTime = Date.now();
-    const startTime = endTime - (timeRange * 24 * 60 * 60 * 1000); // X days ago
+    const startTime = endTime - (timePeriod.hours * 60 * 60 * 1000); // Based on selected time period
 
     try {
       // Fetch data for all tokens
@@ -131,7 +138,7 @@ function FundingRatesChart() {
 
   useEffect(() => {
     fetchAllData();
-  }, [timeRange]);
+  }, [timePeriod]);
 
   const chartConfig: ChartConfig = {
     PURR: {
@@ -179,19 +186,18 @@ function FundingRatesChart() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            Hyperliquid Funding Rates Analysis
+            Hyperliquid Protocol Funding Rates Analysis - Top Markets
             <div className="flex items-center gap-2">
               <select 
-                value={timeRange} 
-                onChange={(e) => setTimeRange(Number(e.target.value))}
+                value={timePeriod.value} 
+                onChange={(e) => setTimePeriod(TIME_PERIODS.find(tp => tp.value === e.target.value) || TIME_PERIODS[1])}
                 className="px-3 py-1 border rounded-md text-sm"
               >
-                <option value={1}>24 Hours</option>
-                <option value={3}>3 Days</option>
-                <option value={7}>7 Days</option>
-                <option value={14}>14 Days</option>
-                <option value={30}>30 Days</option>
-                <option value={180}>180 Days</option>
+                {TIME_PERIODS.map((period) => (
+                  <option key={period.value} value={period.value}>
+                    {period.label}
+                  </option>
+                ))}
               </select>
               <Button 
                 onClick={fetchAllData} 
@@ -208,8 +214,13 @@ function FundingRatesChart() {
             </div>
           </CardTitle>
           <CardDescription>
-            Historical funding rates for delta neutral strategy analysis
+            Last {timePeriod.label} of funding rates (hourly rates in %). Markets sorted by highest funding rate.
             {lastUpdate && <span className="ml-2 text-xs">Last updated: {lastUpdate}</span>}
+            <div className="mt-3 space-y-2">
+              <div className="text-xs font-medium text-gray-700 mb-2">
+                Click to toggle markets (all shown by default):
+              </div>
+            </div>
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -224,43 +235,37 @@ function FundingRatesChart() {
                 <LineChart data={data}>
                   <CartesianGrid strokeDasharray="3 3" />
                   <XAxis 
-  dataKey="timestamp"
-  tickFormatter={(timestamp) => {
-    const date = new Date(timestamp);
-    const dateStr = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
-    
-    // Show time for 1-day timeRange
-    if (timeRange === 1) {
-      const hours = String(date.getHours()).padStart(2, '0');
-      const minutes = String(date.getMinutes()).padStart(2, '0');
-      return `${dateStr} ${hours}:${minutes}`;
-    }
-    
-    return dateStr;
-  }}
-  tick={{ fontSize: 12 }}  // Smaller font size for tick labels
-/>
-
-<YAxis 
-  tickFormatter={(value) => `${value.toFixed(4)}%`}
-  tick={{ fontSize: 12 }}  // Smaller font size for tick labels
-  label={{ 
-    value: 'Funding Rate (%/hour)', 
-    angle: -90, 
-    position: 'insideLeft',
-    fontSize: 14,  // Slightly larger font size for axis label
-    style: { textAnchor: 'middle' }  // Better vertical alignment
-  }}
-/>
+                    dataKey="timestamp"
+                    tickFormatter={(timestamp) => {
+                      const date = new Date(timestamp);
+                      const dateStr = `${String(date.getDate()).padStart(2, '0')}/${String(date.getMonth() + 1).padStart(2, '0')}/${date.getFullYear()}`;
+                      
+                      // Show time for 24h time period
+                      if (timePeriod.value === '24h') {
+                        const hours = String(date.getHours()).padStart(2, '0');
+                        const minutes = String(date.getMinutes()).padStart(2, '0');
+                        return `${dateStr} ${hours}:${minutes}`;
+                      }
+                      
+                      return dateStr;
+                    }}
+                  />
+                  <YAxis 
+                    label={{ value: 'Funding Rate (%/hour)', angle: -90, position: 'insideLeft' }}
+                    tickFormatter={(value) => `${value.toFixed(4)}%`}
+                  />
                   <ChartTooltip 
                     content={({ active, payload, label }) => {
                       if (active && payload && payload.length) {
+                        const date = new Date(label);
+                        const formattedDate = date.toLocaleString();
+                        
                         return (
                           <div className="bg-white p-3 border rounded-lg shadow-lg">
-                            <p className="font-medium">{label}</p>
+                            <p className="font-medium">{formattedDate}</p>
                             {payload.map((entry, index) => (
                               <p key={index} style={{ color: entry.color }}>
-                                {entry.dataKey}: {(entry.value as number)?.toFixed(4)}%
+                                {entry.dataKey}: {(entry.value as number)?.toFixed(6)}%/hour
                               </p>
                             ))}
                           </div>
@@ -278,7 +283,7 @@ function FundingRatesChart() {
                       stroke={COLORS[token]}
                       strokeWidth={2}
                       dot={false}
-                      connectNulls={false}
+                      connectNulls={true}
                     />
                   ))}
                 </LineChart>
@@ -304,16 +309,19 @@ function FundingRatesChart() {
                       className="w-3 h-3 rounded-full" 
                       style={{ backgroundColor: COLORS[token] }}
                     />
-                    {token}
+                    <span className="text-blue-600">{token}</span>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="pt-0">
                   <div className="space-y-1 text-sm">
-                    <div>Avg: {stats.avg.toFixed(4)}%</div>
-                    <div>Min: {stats.min.toFixed(4)}%</div>
-                    <div>Max: {stats.max.toFixed(4)}%</div>
-                    <div className="text-xs text-gray-500 mt-1">
-                      APR: {(stats.avg * 24 * 365).toFixed(1)}%
+                    <div className="font-medium text-blue-600 mb-2">
+                      Historical ({timePeriod.value})
+                    </div>
+                    <div>Avg: {stats.avg.toFixed(6)}%/hour</div>
+                    <div>Min: {stats.min.toFixed(6)}%/hour</div>
+                    <div>Max: {stats.max.toFixed(6)}%/hour</div>
+                    <div className="text-xs text-gray-500">
+                      APR: {(stats.avg * 24 * 365).toFixed(2)}%
                     </div>
                   </div>
                 </CardContent>
@@ -325,7 +333,7 @@ function FundingRatesChart() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Strategy Insights</CardTitle>
+          <CardTitle>Hyperliquid Protocol Insights</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-2 text-sm">
