@@ -87,10 +87,6 @@ interface SortConfig {
 
 type Protocol = 'Hyperliquid' | 'Drift' | 'Lighter' | 'Paradex' | 'GMX' | 'Spot';
 
-interface FilterConfig {
-  assetSearch: string;
-  protocols: Protocol[];
-}
 
 interface ArbitrageOpportunity {
   asset: string;
