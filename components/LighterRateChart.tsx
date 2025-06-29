@@ -46,7 +46,7 @@ const RESOLUTION = "1h";
 const TIME_PERIODS = [
   { value: '24h', label: '24 Hours', hours: 24 },
   { value: '7d', label: '7 Days', hours: 24 * 7 },
-  { value: '30d', label: '30 Days', hours: 24 * 30 },
+  { value: '14d', label: '14 Days', hours: 24 * 14 },
 ];
 
 export default function ZkLighterMultiFundingChart() {
@@ -54,7 +54,7 @@ export default function ZkLighterMultiFundingChart() {
   const [loading, setLoading] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [selectedMarkets, setSelectedMarkets] = useState<string[]>([]);
-  const [timePeriod, setTimePeriod] = useState<typeof TIME_PERIODS[number]>(TIME_PERIODS[0]);
+  const [timePeriod, setTimePeriod] = useState<typeof TIME_PERIODS[number]>(TIME_PERIODS[1]); // default to 7 days
   const [availableMarkets, setAvailableMarkets] = useState<string[]>([]);
 
   // Helper: fetch historical funding data for one market ID
@@ -323,9 +323,12 @@ export default function ZkLighterMultiFundingChart() {
                   <ChartTooltip 
                     content={({ active, payload, label }) => {
                       if (active && payload && payload.length) {
+                        const date = new Date(label);
+                        const formattedDate = date.toLocaleString();
+                        
                         return (
                           <div className="bg-white p-3 border rounded-lg shadow-lg">
-                            <p className="font-medium">{label}</p>
+                            <p className="font-medium">{formattedDate}</p>
                             {payload.map((entry, index) => (
                               <p key={index} style={{ color: entry.color }}>
                                 {entry.dataKey}: {(entry.value as number)?.toFixed(6)}%

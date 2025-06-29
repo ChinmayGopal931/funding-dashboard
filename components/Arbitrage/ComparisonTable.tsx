@@ -188,6 +188,11 @@ const OpportunityRow = memo(({
           {opportunity.gmxMarket?.openInterestLong && opportunity.gmxMarket?.openInterestShort ? (
             <div className="whitespace-nowrap">G - {formatSmallOI((parseFloat(opportunity.gmxMarket.openInterestLong) + parseFloat(opportunity.gmxMarket.openInterestShort)) / 1e30)}</div>
           ) : null}
+          {opportunity.gmxMarket?.openInterestLong && opportunity.gmxMarket?.openInterestShort && opportunity.gmxMarket?.indexPrice ? (
+            <div className="whitespace-nowrap">S - {  ((parseFloat(opportunity.gmxMarket.openInterestLong) + parseFloat(opportunity.gmxMarket.openInterestShort)) / 1e30) *
+          parseFloat(opportunity.gmxMarket.indexPrice)
+        }</div>
+          ) : null}
           {opportunity.openInterestParadex ? (
             <div className="whitespace-nowrap">P - {formatSmallOI(opportunity.openInterestParadex)}</div>
           ) : null}
@@ -597,6 +602,8 @@ export default function FundingArbitrageDashboard() {
       />
     );
   }
+
+  console.log(opportunities)
 
   return (
     <div className="w-full max-w-7xl mx-auto p-4 space-y-6">
