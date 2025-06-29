@@ -168,7 +168,7 @@ export default function ZkLighterMultiFundingChart() {
     if (markets.length > 0 && selectedMarkets.length === 0) {
       setSelectedMarkets(markets.slice(0, 3));
     }
-  }, []);
+  }, [fetchAllMarketsData, selectedMarkets]);
 
   // Fetch data when selected markets or time period changes
   useEffect(() => {

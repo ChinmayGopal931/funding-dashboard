@@ -271,7 +271,7 @@ function ParadexFundingRatesChart() {
 
   useEffect(() => {
     fetchAllData();
-  }, [selectedMarkets, timePeriod]);
+  }, [fetchAllData]);
 
   const generateColor = (symbol: string) => {
     if (COLORS[symbol]) return COLORS[symbol];
