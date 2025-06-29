@@ -379,7 +379,7 @@ function ParadexFundingRatesChart() {
                 {availableMarkets.map((market) => {
                   const isSelected = selectedMarkets.includes(market.symbol);
                   const fundingRate8h = formatFundingRate(market.funding_rate);
-                  const fundingRateAPR = calculateAPR(parseFloat(market.funding_rate) * 100).toFixed(1);
+                  const fundingRateAPR = calculateAPR(parseFloat(market.funding_rate) * 100).toFixed(2);
 
                   return (
                     <button

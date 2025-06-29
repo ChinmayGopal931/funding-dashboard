@@ -126,6 +126,100 @@ export const fetchLighterFundingHistory = async (marketId: number, startTime: nu
     return [];
   }
 };
+
+export interface LighterMarket {
+  market_id: number;
+  symbol: string;
+  latestRate?: number;
+  funding_rate?: string;
+}
+
+// Helper function to introduce delay between API calls
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Cache for Lighter markets data to reduce API calls
+let lighterMarketsCache: {
+  timestamp: number;
+  markets: LighterMarket[];
+} | null = null;
+
+// Cache expiration time (5 minutes)
+const CACHE_EXPIRATION = 5 * 60 * 1000;
+
+export const fetchAllLighterMarkets = async (): Promise<LighterMarket[]> => {
+  try {
+    // Check if we have valid cached data
+    const now = Date.now();
+    if (lighterMarketsCache && (now - lighterMarketsCache.timestamp) < CACHE_EXPIRATION) {
+      console.log('Using cached Lighter markets data');
+      return lighterMarketsCache.markets;
+    }
+    
+    // Get the current time and 1 hour ago
+    const oneHourAgo = now - (1 * 60 * 60 * 1000);
+    
+    // Create a list of all market IDs from LIGHTER_MARKET_IDS
+    const allMarkets: LighterMarket[] = Object.entries(LIGHTER_MARKET_IDS).map(([symbol, market_id]) => ({
+      market_id,
+      symbol,
+      latestRate: undefined
+    }));
+    
+    // Use only the most popular markets to reduce API calls
+    const popularMarkets = ['BTC', 'ETH', 'SOL', 'AVAX', 'DOGE', 'WIF', 'XRP', 'LINK', 'NEAR', 'DOT', 'SUI', 'JUP', 'BNB', 'APT'];
+    const priorityMarkets = allMarkets.filter(market => popularMarkets.includes(market.symbol));
+    
+    // Process markets in batches with delay to avoid rate limiting
+    const batchSize = 3; // Process 3 markets at a time
+    const delayMs = 1000; // 1 second delay between batches
+    const marketsWithRates: LighterMarket[] = [];
+    
+    // Process priority markets first
+    for (let i = 0; i < priorityMarkets.length; i += batchSize) {
+      const batch = priorityMarkets.slice(i, i + batchSize);
+      const batchResults = await Promise.all(
+        batch.map(async (market) => {
+          try {
+            const fundingData = await fetchLighterFundingHistory(market.market_id, oneHourAgo, now);
+            if (fundingData.length > 0) {
+              const latestEntry = fundingData[fundingData.length - 1];
+              market.latestRate = parseFloat(latestEntry.rate);
+              market.funding_rate = latestEntry.rate; // Set funding_rate for use in selection cards
+            }
+            return market;
+          } catch (error) {
+            console.error(`Error fetching data for market ${market.symbol}:`, error);
+            return market;
+          }
+        })
+      );
+      
+      marketsWithRates.push(...batchResults);
+      
+      // Add delay between batches to avoid rate limiting
+      if (i + batchSize < priorityMarkets.length) {
+        await delay(delayMs);
+      }
+    }
+    
+    // Filter out markets with no rates and sort by absolute funding rate (highest first)
+    const sortedMarkets = marketsWithRates
+      .filter(market => market.latestRate !== undefined)
+      .sort((a, b) => Math.abs(b.latestRate!) - Math.abs(a.latestRate!));
+    
+    // Cache the results
+    lighterMarketsCache = {
+      timestamp: now,
+      markets: sortedMarkets
+    };
+    
+    return sortedMarkets;
+      
+  } catch (error) {
+    console.error('Error fetching all Lighter markets:', error);
+    return [];
+  }
+};
   
     export   const fetchHyperliquidSpotData = async (): Promise<{ 
         tokens: any[], 
