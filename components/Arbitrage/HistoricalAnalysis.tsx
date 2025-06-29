@@ -174,7 +174,11 @@ async function fetchGMXHistoricalRates(asset: string, days: number): Promise<Fun
   return [];
 }
 
-async function fetchParadexHistoricalRates(asset: string, days: number): Promise<FundingDataPoint[]> {
+async function fetchParadexHistoricalRates(
+  asset: string,
+  days: number,
+  onProgress?: (pct: number) => void,
+): Promise<FundingDataPoint[]> {
   const market = `${asset}-USD-PERP`;
   const endTime = Date.now();
   const startTime = endTime - (days * 24 * 60 * 60 * 1000);
@@ -182,55 +186,73 @@ async function fetchParadexHistoricalRates(asset: string, days: number): Promise
   try {
     const allData: ParadexFundingDataPoint[] = [];
     let cursor: string | null = null;
-    const pageSize = 5000; // Max allowed
+    const pageSize = 5000; // Max allowed per docs
+    let page = 0;
     
     do {
+      page += 1;
       const params = new URLSearchParams({
         market,
         page_size: pageSize.toString(),
         start_at: startTime.toString(),
         end_at: endTime.toString(),
       });
-      
       if (cursor) params.append('cursor', cursor);
+
+      const requestUrl = `https://api.prod.paradex.trade/v1/funding/data?${params}`;
+      console.log(`[Paradex] Fetching page ${page}: ${requestUrl}`);
       
-      const response = await fetch(
-        `https://api.prod.paradex.trade/v1/funding/data?${params}`,
-        { headers: { 'Accept': 'application/json' } }
-      );
-      
+      const response = await fetch(requestUrl, { headers: { 'Accept': 'application/json' } });
       if (!response.ok) {
-        console.error(`Paradex API error: ${response.status}`);
+        console.error(`[Paradex] API error on page ${page}: ${response.status} ${response.statusText}`);
         break;
       }
-      
       const data: ParadexFundingResponse = await response.json();
-      allData.push(...(data.results || []));
+      console.log(`[Paradex] Page ${page} results: ${data.results?.length ?? 0}, next: ${data.next ? 'yes' : 'no'}`);
+
+      const pageResults = data.results || [];
+      allData.push(...pageResults);
+
+      // progress: based on oldest timestamp fetched so far versus requested window
+      if (onProgress && pageResults.length) {
+        const oldestTs = Math.min(...allData.map(r => r.created_at));
+        const pct = Math.min(1, (endTime - oldestTs) / (endTime - startTime));
+        onProgress(pct);
+      }
       
       cursor = data.next;
       
-      // Stop if we have enough data for the time range
-      const maxDataPoints = days * 24 * 12; // Assuming 5-minute intervals
-      if (allData.length > maxDataPoints) break;
-      
+      // Safety: if API keeps paginating forever, bail after 20 pages (100k rows)
+      if (page >= 20) {
+        console.warn('[Paradex] Reached pagination limit (20 pages), stopping.');
+        break;
+      }
     } while (cursor);
+
+    // Filter strictly to requested window and sort ascending
+    const filteredData = allData
+      .filter(entry => entry.created_at >= startTime && entry.created_at <= endTime)
+      .sort((a, b) => a.created_at - b.created_at);
+
+    console.log(`[Paradex] Total entries fetched: ${allData.length}. In-range entries: ${filteredData.length}`);
     
     // Convert to the expected format
-    return allData.map(entry => {
-      // Convert funding rate to hourly percentage
-      // Paradex rates are per 8 hours, so divide by 8 to get hourly
-      const hourlyRate = parseFloat(entry.funding_rate) * 100 / 8;
-      
+    return filteredData.map(entry => {
+      // Convert funding rate to hourly percentage (Paradex rates are per 8 h)
+      const hourlyRate = (parseFloat(entry.funding_rate) * 100) / 8;
       return {
         timestamp: entry.created_at,
         date: new Date(entry.created_at).toLocaleString(),
         paradex: hourlyRate,
-        spot: 0
+        spot: 0,
       };
     });
   } catch (error) {
     console.error('Error fetching Paradex rates:', error);
+    onProgress?.(1);
     return [];
+  } finally {
+    onProgress?.(1);
   }
 }
 
@@ -239,7 +261,7 @@ const CustomTooltip = ({ active, payload, label }: any) => {
   if (active && payload && payload.length) {
     return (
       <div className="bg-background border rounded-lg p-3 shadow-lg">
-        <p className="text-sm font-medium">{label}</p>
+        <p className="text-sm font-medium">{new Date(label).toLocaleString()}</p>
         {payload.map((entry: any) => (
           <p key={entry.name} className="text-sm" style={{ color: entry.color }}>
             {entry.name}: {entry.value?.toFixed(4)}%
@@ -252,10 +274,11 @@ const CustomTooltip = ({ active, payload, label }: any) => {
 };
 
 export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketIds }: HistoricalAnalysisProps) {
-  const [timeRange, setTimeRange] = useState<'24h' | '7d' | '30d'>('7d');
+  const [timeRange, setTimeRange] = useState<'24h' | '7d' | '14d'>('7d');
   const [loading, setLoading] = useState(true);
   const [fundingData, setFundingData] = useState<FundingDataPoint[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [paradexProgress, setParadexProgress] = useState(0);
 
   // Parse strategy to determine which platforms to show
   const strategyPlatforms = useMemo(() => {
@@ -303,7 +326,7 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
       setError(null);
       
       try {
-        const days = timeRange === '24h' ? 1 : timeRange === '7d' ? 7 : 30;
+        const days = timeRange === '24h' ? 1 : timeRange === '7d' ? 7 : 14;
         const promises = [];
         
         if (strategyPlatforms.includes('drift')) {
@@ -326,10 +349,14 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
         }
         
         if (strategyPlatforms.includes('paradex')) {
-          promises.push(fetchParadexHistoricalRates(opportunity.asset, days));
+          promises.push(
+            fetchParadexHistoricalRates(opportunity.asset, days, pct => setParadexProgress(pct)),
+          );
         }
         
         const results = await Promise.all(promises);
+
+        console.log(results)
 
         // Merge all data points by timestamp
         const dataMap = new Map<number, FundingDataPoint>();
@@ -503,13 +530,21 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
             <TabsList className="mb-4">
               <TabsTrigger value="24h">24 Hours</TabsTrigger>
               <TabsTrigger value="7d">7 Days</TabsTrigger>
-              <TabsTrigger value="30d">30 Days</TabsTrigger>
+              <TabsTrigger value="14d">14 Days</TabsTrigger>
             </TabsList>
             
             <TabsContent value={timeRange} className="space-y-6">
               {loading ? (
-                <div className="flex justify-center py-12">
+                <div className="flex flex-col items-center py-12 space-y-4">
                   <Loader2 className="h-8 w-8 animate-spin" />
+                  {strategyPlatforms.includes('paradex') && paradexProgress > 0 && paradexProgress < 1 && (
+                    <div className="w-full max-w-sm h-2 rounded bg-muted overflow-hidden">
+                      <div
+                        className="h-full bg-primary transition-all"
+                        style={{ width: `${(paradexProgress * 100).toFixed(0)}%` }}
+                      />
+                    </div>
+                  )}
                 </div>
               ) : (
                 <>
