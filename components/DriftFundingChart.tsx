@@ -357,17 +357,17 @@ function DriftFundingRatesChart() {
                       onClick={() => toggleMarket(contract.ticker_id)}
                       className={`p-2 text-xs rounded-md border text-left ${
                         isSelected
-                          ? 'text-[#835AE1]'
+                          ? 'text-[#dd7600]'
                           : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
                       }`}
                       style={{
-                        background: isSelected ? '#ffe9c9' : undefined,
+                        background: isSelected ? '#ffedd8' : undefined,
                         borderColor: isSelected ? generateColor(contract.ticker_id) : undefined
                       }}
                     >
                       <div className="font-bold">{contract.ticker_id}</div>
-                      <div className="text-xs opacity-75">Rate: {nextFundingRate}%</div>
-                      <div className="text-xs opacity-75">APR: {nextFundingRateApr}%</div>
+                      <div className="text-xs">Rate: {nextFundingRate}%</div>
+                      <div className="text-xs">APR: {nextFundingRateApr}%</div>
                     </button>
                   );
                 })}

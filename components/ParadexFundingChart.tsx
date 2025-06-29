@@ -393,8 +393,8 @@ function ParadexFundingRatesChart() {
                       style={isSelected ? { borderColor: generateColor(market.symbol) } : {}}
                     >
                       <div className="font-bold">{market.symbol}</div>
-                      <div className="text-xs opacity-75">Rate: {fundingRate8h}%</div>
-                      <div className="text-xs opacity-75">APR: {fundingRateAPR}%</div>
+                      <div className="text-xs">Rate: {fundingRate8h}%</div>
+                      <div className="text-xs">APR: {fundingRateAPR}%</div>
                     </button>
                   );
                 })}

@@ -277,8 +277,8 @@ export default function ZkLighterMultiFundingChart() {
                       style={isSelected ? { borderColor: color } : {}}
                     >
                       <div className="font-bold">{ticker}</div>
-                      <div className="text-xs opacity-75">Avg: {stats.avg.toFixed(4)}%</div>
-                      <div className="text-xs opacity-75">Range: {stats.min.toFixed(4)}% - {stats.max.toFixed(4)}%</div>
+                      <div className="text-xs">Avg: {stats.avg.toFixed(4)}%</div>
+                      <div className="text-xs">Range: {stats.min.toFixed(4)}% - {stats.max.toFixed(4)}%</div>
                     </button>
                   );
                 })}
