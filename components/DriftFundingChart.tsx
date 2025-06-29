@@ -116,7 +116,8 @@ async function fetchDriftFundingRates(marketSymbol: string): Promise<DriftFundin
 const TIME_PERIODS = [
   { value: '24h', label: '24 Hours', hours: 24 },
   { value: '7d', label: '7 Days', hours: 24 * 7 },
-  { value: '21d', label: '21 Days', hours: 24 * 21 },
+  { value: '14d', label: '14 Days', hours: 24 * 14 },
+  { value: '30d', label: '30 Days', hours: 24 * 30 },
 ];
 
 function DriftFundingRatesChart() {

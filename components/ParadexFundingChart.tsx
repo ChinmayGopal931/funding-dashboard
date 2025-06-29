@@ -19,11 +19,11 @@ const COLORS: Record<string, string> = {
   'AVAX-USD-PERP': '#45b7d1'
 };
 
-// Define time period options similar to DriftFundingChart
+// Define time period options
 const TIME_PERIODS = [
   { value: '24h', label: '24 Hours', hours: 24 },
   { value: '7d', label: '7 Days', hours: 24 * 7 },
-  { value: '30d', label: '30 Days', hours: 24 * 30 },
+  { value: '14d', label: '14 Days', hours: 24 * 14 },
 ];
 
 interface ParadexMarket {
@@ -126,7 +126,7 @@ function ParadexFundingRatesChart() {
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [availableMarkets, setAvailableMarkets] = useState<ParadexMarket[]>([]);
   const [selectedMarkets, setSelectedMarkets] = useState<string[]>([]);
-  const [timePeriod, setTimePeriod] = useState<typeof TIME_PERIODS[number]>(TIME_PERIODS[2]);
+  const [timePeriod, setTimePeriod] = useState<typeof TIME_PERIODS[number]>(TIME_PERIODS[1]); // default to 7 days
 
   const processMultiMarketData = (marketDataMap: Record<string, ParadexFundingDataPoint[]>): ProcessedDataPoint[] => {
     // Step 1: Process each market's data into a map
