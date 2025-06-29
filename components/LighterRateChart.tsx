@@ -222,7 +222,7 @@ export default function ZkLighterMultiFundingChart() {
     <div className="w-full mx-auto p-6 space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
+          <CardTitle className="flex items-center justify-between font-bold">
             ZkLighter Funding Rates
             <div className="flex items-center gap-2">
               <select
@@ -271,14 +271,14 @@ export default function ZkLighterMultiFundingChart() {
                       onClick={() => toggleMarket(ticker)}
                       className={`p-2 text-xs rounded-md border text-left ${
                         isSelected
-                          ? 'bg-blue-100 border-blue-300 text-blue-800'
+                          ? 'bg-[#F0F2F5] text-[#386CDB]'
                           : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
                       }`}
                       style={isSelected ? { borderColor: color } : {}}
                     >
-                      <div className="font-medium">{ticker}</div>
-                      <div className="text-xs opacity-75">Avg: {stats.avg.toFixed(4)}%</div>
-                      <div className="text-xs opacity-75">Range: {stats.min.toFixed(4)}% - {stats.max.toFixed(4)}%</div>
+                      <div className="font-bold">{ticker}</div>
+                      <div className="text-xs">Avg: {stats.avg.toFixed(4)}%</div>
+                      <div className="text-xs">Range: {stats.min.toFixed(4)}% - {stats.max.toFixed(4)}%</div>
                     </button>
                   );
                 })}

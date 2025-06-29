@@ -307,7 +307,7 @@ function DriftFundingRatesChart() {
     <div className="w-full mx-auto p-6 space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
+          <CardTitle className="flex items-center justify-between font-bold">
             Drift Protocol Funding Rates Analysis - Top 10 Markets
             <div className="flex items-center gap-2">
               <select
@@ -357,13 +357,17 @@ function DriftFundingRatesChart() {
                       onClick={() => toggleMarket(contract.ticker_id)}
                       className={`p-2 text-xs rounded-md border text-left ${
                         isSelected
-                          ? 'bg-blue-100 border-blue-300 text-blue-800'
+                          ? 'text-[#dd7600]'
                           : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
                       }`}
+                      style={{
+                        background: isSelected ? '#ffedd8' : undefined,
+                        borderColor: isSelected ? generateColor(contract.ticker_id) : undefined
+                      }}
                     >
-                      <div className="font-medium">{contract.ticker_id}</div>
-                      <div className="text-xs opacity-75">Rate: {nextFundingRate}%</div>
-                      <div className="text-xs opacity-75">APR: {nextFundingRateApr}%</div>
+                      <div className="font-bold">{contract.ticker_id}</div>
+                      <div className="text-xs">Rate: {nextFundingRate}%</div>
+                      <div className="text-xs">APR: {nextFundingRateApr}%</div>
                     </button>
                   );
                 })}
