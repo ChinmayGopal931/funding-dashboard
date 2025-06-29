@@ -76,7 +76,7 @@ async function fetchDriftContracts(): Promise<DriftContract[]> {
     }
     
     const data = await response.json();
-    console.log('Drift contracts data:', data);
+    // console.log('Drift contracts data:', data);
     
     // Filter PERP contracts and sort by next_funding_rate (highest first)
     const perpContracts = data.contracts?.filter((contract: DriftContract) => 
@@ -233,7 +233,7 @@ function DriftFundingRatesChart() {
   const loadAvailableMarkets = async () => {
     try {
       const contracts = await fetchDriftContracts();
-      console.log('Sorted contracts:', contracts.slice(0, 10)); // Debug log
+      // console.log('Sorted contracts:', contracts.slice(0, 10)); // Debug log
       
       // Store the top 10 contracts with highest funding rates
       const topContracts = contracts.slice(0, 10);
@@ -339,7 +339,7 @@ function DriftFundingRatesChart() {
             </div>
           </CardTitle>
           <CardDescription>
-            Last 30 days of funding rates (hourly rates in %). Markets sorted by highest next funding rate.
+            Last {timePeriod.label} of funding rates (hourly rates in %). Markets sorted by highest funding rate.
             {lastUpdate && <span className="ml-2 text-xs">Last updated: {lastUpdate}</span>}
             <div className="mt-3 space-y-2">
               <div className="text-xs font-medium text-gray-700 mb-2">
@@ -349,7 +349,7 @@ function DriftFundingRatesChart() {
                 {availableMarkets.map(contract => {
                   const isSelected = selectedMarkets.includes(contract.ticker_id);
                   const nextFundingRate = (parseFloat(contract.next_funding_rate) * 100).toFixed(4);
-                  const nextFundingRateApr = (parseFloat(contract.next_funding_rate) * 24 * 365 * 100).toFixed(1);
+                  const nextFundingRateApr = (parseFloat(contract.next_funding_rate) * 24 * 365 * 100).toFixed(2);
                   
                   return (
                     <button
