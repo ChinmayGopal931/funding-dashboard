@@ -255,7 +255,7 @@ function DriftFundingRatesChart() {
 
   useEffect(() => {
     fetchAllData();
-  }, [selectedMarkets, timePeriod]);
+  }, [fetchAllData]);
 
   const generateColor = (tickerId: string) => {
     if (COLORS[tickerId]) return COLORS[tickerId];
