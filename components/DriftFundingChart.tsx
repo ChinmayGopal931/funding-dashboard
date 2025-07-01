@@ -1,5 +1,5 @@
 "use client"
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Legend, ResponsiveContainer } from 'recharts';
 import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -192,7 +192,7 @@ function DriftFundingRatesChart() {
     return combinedData;
   };
 
-  const fetchAllData = async () => {
+  const fetchAllData = useCallback(async () => {
     if (selectedMarkets.length === 0) {
       setData([]);
       return;
@@ -227,7 +227,7 @@ function DriftFundingRatesChart() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [selectedMarkets, timePeriod]);
 
   const loadAvailableMarkets = async () => {
     try {

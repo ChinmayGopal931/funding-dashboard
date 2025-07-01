@@ -256,9 +256,6 @@ function FundingRatesChart() {
     }
   }, [data.length === 0]); // This dependency ensures it only runs once when data first becomes available
 
-  useEffect(() => {
-    fetchAllData();
-  }, [timePeriod, selectedTokens]);
 
   // Generate chart config with colors for selected tokens
   const chartConfig: ChartConfig = selectedTokens.reduce((config, token) => {
