@@ -6,22 +6,30 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Button } from '@/components/ui/button';
 import { Loader2, RefreshCw } from 'lucide-react';
 
-const TOKENS = ['PURR', 'SOL', 'ETH', 'BTC', 'HYPE', 'ZORA'] as const;
+const TOKENS = ['PURR', 'SOL', 'ETH', 'BTC', 'HYPE', 'ZORA', 'JTO', 'BONK', 'PYTH', 'WIF'] as const;
 
-type TokenType = typeof TOKENS[number];
-
-const COLORS: Record<TokenType, string> = {
+const COLORS: Record<string, string> = {
   'PURR': '#8b5cf6',
   'SOL': '#06d6a0',
   'ETH': '#627eea',
   'BTC': '#f7931a',
   'HYPE': '#b1931a',
-  'ZORA': '#A6d6a0'
+  'ZORA': '#A6d6a0',
+  'JTO': '#06d6a0',
+  'BONK': '#ff6b6b',
+  'PYTH': '#ef4444',
+  'WIF': '#f59e0b'
 };
 
 interface FundingHistoryEntry {
   time: number;
   fundingRate: string;
+}
+
+interface TokenWithRate {
+  token: string;
+  rate: number;
+  apr: number;
 }
 
 interface ProcessedDataPoint {
@@ -47,10 +55,12 @@ interface ChartConfig {
 
 async function fetchFundingHistory(coin: string, startTime: number, endTime: number): Promise<FundingHistoryEntry[]> {
   try {
+    // Updated API endpoint with better error handling
     const response = await fetch('https://api.hyperliquid.xyz/info', {
       method: 'POST',
       headers: {
-        'Content-Type': 'application/json'
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
       },
       body: JSON.stringify({
         type: 'fundingHistory',
@@ -60,9 +70,11 @@ async function fetchFundingHistory(coin: string, startTime: number, endTime: num
       })
     });
     
-    
+    // If response is not ok, log the error but don't throw
+    // This allows the chart to continue loading other tokens
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      console.warn(`API returned ${response.status} for ${coin}. Skipping this token.`);
+      return [];
     }
     
     const data: FundingHistoryEntry[] = await response.json();
@@ -85,6 +97,30 @@ function FundingRatesChart() {
   const [loading, setLoading] = useState<boolean>(false);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
   const [timePeriod, setTimePeriod] = useState<typeof TIME_PERIODS[number]>(TIME_PERIODS[1]); // default to 7 days
+  const [availableTokens, setAvailableTokens] = useState<string[]>([]);
+  const [selectedTokens, setSelectedTokens] = useState<string[]>([]);
+
+  // Toggle token selection on/off
+  const toggleToken = (token: string) => {
+    setSelectedTokens(prev => 
+      prev.includes(token) 
+        ? prev.filter(t => t !== token)
+        : [...prev, token].slice(0, 7) // Limit to 7 tokens for readability
+    );
+  };
+
+  // Generate a consistent color for tokens not in the COLORS map
+  const generateColor = (token: string) => {
+    if (COLORS[token]) return COLORS[token];
+    
+    // Generate a consistent color based on the token name
+    const hash = token.split('').reduce((a, b) => {
+      a = ((a << 5) - a) + b.charCodeAt(0);
+      return a & a;
+    }, 0);
+    const hue = Math.abs(hash) % 360;
+    return `hsl(${hue}, 70%, 50%)`;
+  };
 
   const fetchAllData = async (): Promise<void> => {
     setLoading(true);
@@ -92,10 +128,17 @@ function FundingRatesChart() {
     const startTime = endTime - (timePeriod.hours * 60 * 60 * 1000); // Based on selected time period
 
     try {
-      // Fetch data for all tokens
-      const promises = TOKENS.map(token => 
-        fetchFundingHistory(token, startTime, endTime)
-      );
+      // Only fetch data for tokens that are selected or available
+      const tokensToFetch = availableTokens.length > 0 ? availableTokens : TOKENS;
+      
+      // Create a map to track which token corresponds to which result
+      const tokenMap: Record<number, string> = {};
+      
+      // Fetch data for each token individually to handle errors better
+      const promises = tokensToFetch.map((token, index) => {
+        tokenMap[index] = token; // Store the token for this index
+        return fetchFundingHistory(token, startTime, endTime);
+      });
       
       const results = await Promise.all(promises);
       console.log("Funding data fetched for tokens:", results);
@@ -104,7 +147,14 @@ function FundingRatesChart() {
       const combinedData: Record<number, ProcessedDataPoint> = {};
       
       results.forEach((tokenData, index) => {
-        const token = TOKENS[index];
+        // Use the token map to get the correct token for this index
+        const token = tokenMap[index];
+        
+        if (!tokenData || tokenData.length === 0) {
+          console.log(`No data available for ${token}, skipping`);
+          return; // Skip tokens with no data
+        }
+        
         tokenData.forEach((entry: FundingHistoryEntry) => {
           const timestamp = entry.time;
           const date = new Date(timestamp).toLocaleDateString();
@@ -127,8 +177,12 @@ function FundingRatesChart() {
       const chartData: ProcessedDataPoint[] = Object.values(combinedData)
         .sort((a, b) => a.timestamp - b.timestamp);
       
-      setData(chartData);
-      setLastUpdate(new Date().toLocaleString());
+      if (chartData.length > 0) {
+        setData(chartData);
+        setLastUpdate(new Date().toLocaleString());
+      } else {
+        console.warn('No data available for any selected tokens');
+      }
     } catch (error) {
       console.error('Error fetching funding data:', error);
     } finally {
@@ -136,38 +190,86 @@ function FundingRatesChart() {
     }
   };
 
-  useEffect(() => {
-    fetchAllData();
-  }, [timePeriod]);
-
-  const chartConfig: ChartConfig = {
-    PURR: {
-      label: "PURR",
-      color: COLORS.PURR,
-    },
-    SOL: {
-      label: "SOL",
-      color: COLORS.SOL,
-    },
-    ETH: {
-      label: "ETH",
-      color: COLORS.ETH,
-    },
-    BTC: {
-      label: "BTC",
-      color: COLORS.BTC,
-    },
-    HYPE: {
-      label: "HYPE",
-      color: COLORS.HYPE,
-    },
-    ZORA: {
-      label: "ZORA",
-      color: COLORS.ZORA,
-    },
+  // Sort tokens by funding rate and get top 10
+  const sortTokensByFundingRate = () => {
+    if (data.length === 0) return;
+    
+    // Get the latest data point for each token
+    const latestData = data[data.length - 1];
+    
+    // Create array of tokens with their rates
+    const tokensWithRates: TokenWithRate[] = TOKENS.map(token => {
+      const rate = latestData[token] as number || 0;
+      return {
+        token,
+        rate,
+        apr: rate * 24 * 365
+      };
+    });
+    
+    // Sort by funding rate (highest first)
+    const sortedTokens = tokensWithRates.sort((a, b) => Math.abs(b.rate) - Math.abs(a.rate));
+    
+    // Take top 10 tokens
+    const top10Tokens = sortedTokens.slice(0, 10).map(item => item.token);
+    
+    // Update available tokens to be the top 10
+    setAvailableTokens(top10Tokens);
+    
+    // If no tokens are selected yet, select top 3
+    if (selectedTokens.length === 0) {
+      setSelectedTokens(top10Tokens.slice(0, 3));
+    }
+  };
+  
+  // Initialize top tokens once with initial data
+  const initializeTopTokens = () => {
+    // Sort all tokens by their funding rate (using absolute value to get highest magnitude)
+    const tokensWithRates = TOKENS.map(token => ({
+      token,
+      // Use a default rate of 0 if we don't have data yet
+      rate: 0
+    }));
+    
+    // For initial state, just use the first 10 tokens
+    const initialTop10 = tokensWithRates.slice(0, 10).map(item => item.token);
+    setAvailableTokens(initialTop10);
+    
+    // Select top 3 initially
+    setSelectedTokens(initialTop10.slice(0, 3));
   };
 
-  console.log("TOKEN", TOKENS);
+  // Initialize available tokens on component mount
+  useEffect(() => {
+    // Initialize with the first 10 tokens
+    initializeTopTokens();
+    
+    // Fetch data for these tokens
+    fetchAllData();
+  }, []);
+  
+  // Sort tokens by funding rate only once after initial data is loaded
+  useEffect(() => {
+    if (data.length > 0 && availableTokens.length === 10 && selectedTokens.length === 3) {
+      // This will run only once after initial data load to properly sort by actual rates
+      sortTokensByFundingRate();
+    }
+  }, [data.length === 0]); // This dependency ensures it only runs once when data first becomes available
+
+  useEffect(() => {
+    fetchAllData();
+  }, [timePeriod, selectedTokens]);
+
+  // Generate chart config with colors for selected tokens
+  const chartConfig: ChartConfig = selectedTokens.reduce((config, token) => {
+    config[token] = {
+      label: token,
+      color: generateColor(token),
+    };
+    return config;
+  }, {} as Record<string, { label: string; color: string }>);
+
+
 
   // Calculate some stats
   const getTokenStats = (token: string): TokenStats => {
@@ -186,7 +288,7 @@ function FundingRatesChart() {
       <Card>
         <CardHeader>
           <CardTitle className="flex items-center justify-between">
-            Hyperliquid Protocol Funding Rates Analysis - Top Markets
+            Hyperliquid Protocol Funding Rates Analysis - Top 10 Markets
             <div className="flex items-center gap-2">
               <select 
                 value={timePeriod.value} 
@@ -218,7 +320,31 @@ function FundingRatesChart() {
             {lastUpdate && <span className="ml-2 text-xs">Last updated: {lastUpdate}</span>}
             <div className="mt-3 space-y-2">
               <div className="text-xs font-medium text-gray-700 mb-2">
-                Click to toggle markets (all shown by default):
+                Top 10 markets by funding rate - click to toggle (max 7 selected):
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
+                {availableTokens.map(token => {
+                  const isSelected = selectedTokens.includes(token);
+                  const stats = getTokenStats(token);
+                  const color = generateColor(token);
+                  
+                  return (
+                    <button
+                      key={token}
+                      onClick={() => toggleToken(token)}
+                      className={`p-2 text-xs rounded-md border text-left ${
+                        isSelected
+                          ? 'bg-blue-100 border-blue-300 text-blue-800'
+                          : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
+                      }`}
+                      style={isSelected ? { borderColor: color } : {}}
+                    >
+                      <div className="font-medium">{token}</div>
+                      <div className="text-xs opacity-75">Rate: {stats.avg.toFixed(4)}%</div>
+                      <div className="text-xs opacity-75">APR: {(stats.avg * 24 * 365).toFixed(2)}%</div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
           </CardDescription>
@@ -275,12 +401,12 @@ function FundingRatesChart() {
                     }}
                   />
                   <Legend />
-                  {TOKENS.map(token => (
+                  {selectedTokens.map(token => (
                     <Line
                       key={token}
                       type="monotone"
                       dataKey={token}
-                      stroke={COLORS[token]}
+                      stroke={generateColor(token)}
                       strokeWidth={2}
                       dot={false}
                       connectNulls={true}
@@ -299,7 +425,7 @@ function FundingRatesChart() {
 
       {data.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4">
-          {TOKENS.map(token => {
+          {selectedTokens.map(token => {
             const stats = getTokenStats(token);
             return (
               <Card key={token}>
@@ -307,7 +433,7 @@ function FundingRatesChart() {
                   <CardTitle className="text-lg flex items-center gap-2">
                     <div 
                       className="w-3 h-3 rounded-full" 
-                      style={{ backgroundColor: COLORS[token] }}
+                      style={{ backgroundColor: generateColor(token) }}
                     />
                     <span className="text-blue-600">{token}</span>
                   </CardTitle>

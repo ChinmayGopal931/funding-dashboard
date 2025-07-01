@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw } from "lucide-react";
-import { COLORS, MARKET_MAPPING } from "@/lib/utils";
+import { COLORS, fetchAllLighterMarkets, LighterMarket } from "@/lib/utils";
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
 
 interface FundingDataPoint {
@@ -56,6 +56,7 @@ export default function ZkLighterMultiFundingChart() {
   const [selectedMarkets, setSelectedMarkets] = useState<string[]>([]);
   const [timePeriod, setTimePeriod] = useState<typeof TIME_PERIODS[number]>(TIME_PERIODS[1]); // default to 7 days
   const [availableMarkets, setAvailableMarkets] = useState<string[]>([]);
+  const [topMarkets, setTopMarkets] = useState<LighterMarket[]>([]);
 
   // Helper: fetch historical funding data for one market ID
   const fetchFundingForMarket = useCallback(async (
@@ -83,6 +84,9 @@ export default function ZkLighterMultiFundingChart() {
     }
   }, []);
 
+  // Cache for funding data to reduce API calls
+  const fundingDataCache = React.useRef<Record<string, {timestamp: number, data: FundingDataPoint[]}>>({});
+
   // Fetch all markets funding data and combine timestamps into one timeline
   const fetchAllMarketsData = useCallback(async () => {
     if (selectedMarkets.length === 0) {
@@ -92,21 +96,47 @@ export default function ZkLighterMultiFundingChart() {
 
     setLoading(true);
     try {
-      const allMarketIds = Object.entries(MARKET_MAPPING)
-        .filter(([, ticker]) => selectedMarkets.includes(ticker))
-        .map(([id]) => parseInt(id));
+      // Map selected market tickers back to their IDs
+      const allMarketIds = topMarkets
+        .filter(market => selectedMarkets.includes(`${market.symbol}-PERP`))
+        .map(market => market.market_id);
 
-      // Fetch all selected markets in parallel
-      const results = await Promise.all(
-        allMarketIds.map((id) => fetchFundingForMarket(id, timePeriod.hours))
-      );
+      // Use cached data when possible to reduce API calls
+      const now = Date.now();
+      const cacheExpiration = 5 * 60 * 1000; // 5 minutes cache
+      const fetchPromises = allMarketIds.map(id => {
+        const cacheKey = `${id}-${timePeriod.hours}`;
+        const cachedData = fundingDataCache.current[cacheKey];
+        
+        // Use cached data if available and not expired
+        if (cachedData && (now - cachedData.timestamp) < cacheExpiration) {
+          return Promise.resolve(cachedData.data);
+        }
+        
+        // Otherwise fetch new data
+        return fetchFundingForMarket(id, timePeriod.hours).then(data => {
+          // Cache the result
+          fundingDataCache.current[cacheKey] = {
+            timestamp: now,
+            data: data
+          };
+          return data;
+        });
+      });
+
+      // Fetch data with reduced API calls
+      const results = await Promise.all(fetchPromises);
 
       // Map marketId to array of funding points
       const marketDataMap: Record<string, Record<number, number>> = {};
 
       results.forEach((fundings, idx) => {
         const marketId = allMarketIds[idx];
-        const ticker = MARKET_MAPPING[marketId];
+        // Find the corresponding market in topMarkets
+        const market = topMarkets.find(m => m.market_id === marketId);
+        if (!market) return;
+        
+        const ticker = `${market.symbol}-PERP`;
         marketDataMap[ticker] = {};
 
         fundings.forEach((point) => {
@@ -115,42 +145,39 @@ export default function ZkLighterMultiFundingChart() {
         });
       });
 
-      // Collect all unique timestamps
-      const allTimestampsSet = new Set<number>();
+      // Get all unique timestamps
+      const allTimestamps = new Set<number>();
       Object.values(marketDataMap).forEach((marketData) => {
-        Object.keys(marketData).forEach((ts) => allTimestampsSet.add(Number(ts)));
+        Object.keys(marketData).forEach((ts) => {
+          allTimestamps.add(parseInt(ts));
+        });
       });
-      const allTimestamps = Array.from(allTimestampsSet).sort((a, b) => a - b);
 
-      // Forward fill missing values per market
-      const processed: ProcessedDataPoint[] = allTimestamps.map((timestamp) => {
-        const date = new Date(timestamp);
-        const point: ProcessedDataPoint = {
-          timestamp,
-          date: date.toLocaleDateString(),
-          time: date.toLocaleTimeString(),
-          dateTime: date.toLocaleString(),
+      // Sort timestamps
+      const sortedTimestamps = Array.from(allTimestamps).sort((a, b) => a - b);
+
+      // Create combined data points
+      const combinedData = sortedTimestamps.map((ts) => {
+        const date = new Date(ts);
+        const formattedDate = date.toLocaleDateString();
+        const formattedTime = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+        const dataPoint: ProcessedDataPoint = {
+          timestamp: ts,
+          date: formattedDate,
+          time: formattedTime,
+          dateTime: `${formattedDate} ${formattedTime}`,
         };
 
-        Object.entries(marketDataMap).forEach(([ticker, rates]) => {
-          // Forward fill: look backward if undefined
-          let value = rates[timestamp];
-          if (value === undefined) {
-            // find last known value before timestamp
-            let lastKnown = undefined;
-            for (const t of allTimestamps) {
-              if (t > timestamp) break;
-              if (rates[t] !== undefined) lastKnown = rates[t];
-            }
-            value = lastKnown ?? 0;
-          }
-          point[ticker] = value;
+        // Add data for each market
+        selectedMarkets.forEach((ticker) => {
+          dataPoint[ticker] = marketDataMap[ticker]?.[ts] ?? null;
         });
 
-        return point;
+        return dataPoint;
       });
 
-      setData(processed);
+      setData(combinedData);
       setLastUpdate(new Date().toLocaleString());
     } catch (e) {
       console.error("Error fetching all markets data:", e);
@@ -158,22 +185,91 @@ export default function ZkLighterMultiFundingChart() {
     } finally {
       setLoading(false);
     }
-  }, [selectedMarkets, timePeriod, fetchFundingForMarket]);
+  }, [selectedMarkets, timePeriod, fetchFundingForMarket, topMarkets]);
 
-  // Load available markets on component mount
+  // Load top 10 markets on component mount - only once
   useEffect(() => {
-    const markets = Object.values(MARKET_MAPPING);
-    setAvailableMarkets(markets);
-    // Auto-select first 3 markets initially
-    if (markets.length > 0 && selectedMarkets.length === 0) {
-      setSelectedMarkets(markets.slice(0, 3));
+    const loadTopMarkets = async () => {
+      setLoading(true);
+      try {
+        // Fetch all markets with their funding rates (uses caching internally)
+        const allMarkets = await fetchAllLighterMarkets();
+        
+        // Get top 10 markets by funding rate
+        const top10Markets = allMarkets.slice(0, 10);
+        setTopMarkets(top10Markets); // This should contain funding_rate and latestRate
+        
+        // Convert to ticker format and set as available markets
+        const marketTickers = top10Markets.map(market => `${market.symbol}-PERP`);
+        setAvailableMarkets(marketTickers);
+        
+        // Auto-select top 3 markets initially
+        const initialSelections = marketTickers.slice(0, 3);
+        setSelectedMarkets(initialSelections);
+        
+        // Force a re-render to ensure stats are displayed
+        setLastUpdate(new Date().toLocaleString());
+        
+        // No need to pre-fetch data here - the next useEffect will handle it
+        // This prevents duplicate API calls
+      } catch (error) {
+        console.error('Error loading top markets:', error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    
+    loadTopMarkets();
+    // Only run this once on mount - no dependencies
+  }, []);
+
+  // Function to refresh top markets
+  const refreshTopMarkets = async () => {
+    setLoading(true);
+    try {
+      const allMarkets = await fetchAllLighterMarkets();
+      // Get top 10 markets by funding rate
+      const top10Markets = allMarkets.slice(0, 10);
+      setTopMarkets(top10Markets);
+      
+      // Convert to ticker format and set as available markets
+      const marketTickers = top10Markets.map(market => `${market.symbol}-PERP`);
+      setAvailableMarkets(marketTickers);
+      
+      // Update selected markets to maintain selections where possible
+      setSelectedMarkets(prev => {
+        const stillAvailable = prev.filter(ticker => marketTickers.includes(ticker));
+        // If we lost some selections, add new ones from top markets to maintain up to 3
+        if (stillAvailable.length < Math.min(3, prev.length)) {
+          const newSelections = marketTickers
+            .filter(ticker => !stillAvailable.includes(ticker))
+            .slice(0, 3 - stillAvailable.length);
+          return [...stillAvailable, ...newSelections];
+        }
+        return stillAvailable;
+      });
+      
+      // Fetch data for the updated selections
+      await fetchAllMarketsData();
+    } catch (error) {
+      console.error('Error refreshing top markets:', error);
+    } finally {
+      setLoading(false);
     }
-  }, [fetchAllMarketsData, selectedMarkets]);
+  };
 
   // Fetch data when selected markets or time period changes
   useEffect(() => {
-    fetchAllMarketsData();
-  }, [fetchAllMarketsData]);
+    // Only fetch data when we have selected markets and top markets
+    if (selectedMarkets.length > 0 && topMarkets.length > 0) {
+      // Use a debounced fetch to prevent excessive API calls
+      const timer = setTimeout(() => {
+        fetchAllMarketsData();
+      }, 300); // 300ms debounce
+      
+      return () => clearTimeout(timer); // Clean up timer on dependency changes
+    }
+  }, [fetchAllMarketsData, selectedMarkets, topMarkets.length, timePeriod.hours]);
 
   // Toggle market on/off
   const toggleMarket = (ticker: string) => {
@@ -205,25 +301,49 @@ export default function ZkLighterMultiFundingChart() {
 
   // Calculate stats for each market
   const getMarketStats = (ticker: string) => {
+    // First check if we have historical data
     const values = data
       .map(d => d[ticker] as number)
       .filter(v => !isNaN(v) && v !== null && v !== undefined);
     
-    if (values.length === 0) return { avg: 0, min: 0, max: 0 };
+    if (values.length > 0) {
+      const avg = values.reduce((a, b) => a + b, 0) / values.length;
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      return { avg, min, max };
+    }
     
-    const avg = values.reduce((a, b) => a + b, 0) / values.length;
-    const min = Math.min(...values);
-    const max = Math.max(...values);
+    // If no historical data, try to get the current rate from topMarkets
+    const marketSymbol = ticker.replace('-PERP', '');
+    const marketInfo = topMarkets.find(m => m.symbol === marketSymbol);
     
-    return { avg, min, max };
+    if (marketInfo) {
+      // Try latestRate first (which is set during market fetching)
+      if (marketInfo.latestRate !== undefined) {
+        return { 
+          avg: marketInfo.latestRate, 
+          min: marketInfo.latestRate, 
+          max: marketInfo.latestRate 
+        };
+      }
+      
+      // Then try funding_rate
+      if (marketInfo.funding_rate !== undefined) {
+        const rate = parseFloat(marketInfo.funding_rate);
+        return { avg: rate, min: rate, max: rate };
+      }
+    }
+    
+    // Default to zero if no data available
+    return { avg: 0, min: 0, max: 0 };
   };
 
   return (
     <div className="w-full mx-auto p-6 space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between font-bold">
-            ZkLighter Funding Rates
+          <CardTitle className="flex items-center justify-between">
+            ZkLighter Protocol Funding Rates Analysis - Top 10 Markets
             <div className="flex items-center gap-2">
               <select
                 value={timePeriod.value}
@@ -240,10 +360,11 @@ export default function ZkLighterMultiFundingChart() {
                 ))}
               </select>
               <Button 
-                onClick={fetchAllMarketsData} 
+                onClick={refreshTopMarkets} 
                 disabled={loading}
                 size="sm"
                 variant="outline"
+                title="Refresh top markets and data"
               >
                 {loading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -253,11 +374,12 @@ export default function ZkLighterMultiFundingChart() {
               </Button>
             </div>
           </CardTitle>
-          <CardDescription>
-            Funding rate history for ZkLighter markets. {lastUpdate && <span className="ml-2 text-xs">Last updated: {lastUpdate}</span>}
+            <CardDescription>
+            Last {timePeriod.label} of funding rates (hourly rates in %). Markets sorted by highest funding rate.
+            {lastUpdate && <span className="ml-2 text-xs">Last updated: {lastUpdate}</span>}
             <div className="mt-3 space-y-2">
               <div className="text-xs font-medium text-gray-700 mb-2">
-                Markets - click to toggle (max 7 selected):
+                Top 10 markets by funding rate - click to toggle (max 7 selected):
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2">
                 {availableMarkets.map((ticker) => {
@@ -276,9 +398,9 @@ export default function ZkLighterMultiFundingChart() {
                       }`}
                       style={isSelected ? { borderColor: color } : {}}
                     >
-                      <div className="font-bold">{ticker}</div>
-                      <div className="text-xs">Avg: {stats.avg.toFixed(4)}%</div>
-                      <div className="text-xs">Range: {stats.min.toFixed(4)}% - {stats.max.toFixed(4)}%</div>
+                      <div className="font-medium">{ticker}</div>
+                      <div className="text-xs opacity-75">Rate: {stats.avg.toFixed(4)}%</div>
+                      <div className="text-xs opacity-75">APR: {(stats.avg * 24 * 365).toFixed(2)}%</div>
                     </button>
                   );
                 })}
@@ -364,6 +486,66 @@ export default function ZkLighterMultiFundingChart() {
               <span>No funding data available for the selected markets.</span>
             </div>
           )}
+        </CardContent>
+      </Card>
+
+      {data.length > 0 && selectedMarkets.length > 0 && (
+        <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 mt-6">
+          {selectedMarkets.map(tickerId => {
+            const stats = getMarketStats(tickerId);
+            const color = generateColor(tickerId);
+            const market = topMarkets.find(m => `${m.symbol}-PERP` === tickerId);
+            
+            return (
+              <Card key={tickerId}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <div 
+                      className="w-3 h-3 rounded-full" 
+                      style={{ backgroundColor: color }}
+                    />
+                    {tickerId}
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="pt-0">
+                  <div className="space-y-1 text-sm">
+                    <div className="font-medium text-blue-600 mb-2">Historical</div>
+                    <div>Avg: {stats.avg.toFixed(6)}%</div>
+                    <div>Min: {stats.min.toFixed(6)}%</div>
+                    <div>Max: {stats.max.toFixed(6)}%</div>
+                    <div className="text-xs text-gray-500">
+                      APR: {(stats.avg * 24 * 365).toFixed(2)}%
+                    </div>
+                    {market && market.latestRate !== undefined && (
+                      <>
+                        <div className="font-medium text-green-600 mt-3 mb-1">Current</div>
+                        <div>Latest Rate: {(market.latestRate * 100).toFixed(6)}%</div>
+                        <div className="text-xs text-gray-500">
+                          Latest APR: {(market.latestRate * 24 * 365 * 100).toFixed(2)}%
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+      <Card>
+        <CardHeader>
+          <CardTitle>ZkLighter Strategy Insights</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-2 text-sm">
+            <p><strong>Top 10 Selection:</strong> Markets are automatically sorted by highest absolute funding rates.</p>
+            <p><strong>Auto-Selection:</strong> Top 3 markets are pre-selected for immediate analysis.</p>
+            <p><strong>Rate Calculation:</strong> Funding rates are calculated hourly and displayed as percentages.</p>
+            <p><strong>APR Formula:</strong> Hourly rate × 24 × 365 gives the annualized percentage rate.</p>
+            <p><strong>Market Comparison:</strong> Compare rates across markets to identify arbitrage opportunities.</p>
+            <p><strong>Risk Assessment:</strong> Higher funding rates may indicate higher volatility and risk.</p>
+            <p><strong>Data Source:</strong> Real-time data from ZkLighter Protocol&apos;s public API.</p>
+          </div>
         </CardContent>
       </Card>
     </div>
