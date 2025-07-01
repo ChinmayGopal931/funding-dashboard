@@ -76,7 +76,6 @@ async function fetchDriftContracts(): Promise<DriftContract[]> {
     }
     
     const data = await response.json();
-    // console.log('Drift contracts data:', data);
     
     // Filter PERP contracts and sort by next_funding_rate (highest first)
     const perpContracts = data.contracts?.filter((contract: DriftContract) => 
@@ -233,7 +232,6 @@ function DriftFundingRatesChart() {
   const loadAvailableMarkets = async () => {
     try {
       const contracts = await fetchDriftContracts();
-      // console.log('Sorted contracts:', contracts.slice(0, 10)); // Debug log
       
       // Store the top 10 contracts with highest funding rates
       const topContracts = contracts.slice(0, 10);
