@@ -3,11 +3,13 @@
 import React, { useState, useCallback, useEffect, useMemo, memo } from 'react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Loader2, RefreshCw, AlertCircle, Info } from 'lucide-react';
+import { Loader2, RefreshCw, AlertCircle, Info, ChevronUp, ChevronDown, ArrowUpDown, Search, X } from 'lucide-react';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Tooltip as TooltipComponent, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { Badge } from '@/components/ui/badge';
-import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card'
+import { HoverCard, HoverCardTrigger, HoverCardContent } from '@/components/ui/hover-card';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useWebSocket } from '@/contexts/WebSocketProvider';
 import { fetchDriftContracts, fetchHyperliquidData, fetchGMXMarkets, LIGHTER_MARKET_IDS, GMXMarket, gmxRate8h, ParadexMarket, fetchParadexMarkets } from '@/lib/utils';
 import HistoricalAnalysis from './HistoricalAnalysis';
@@ -73,6 +75,18 @@ interface PlatformData {
   rate: number;
   available: boolean;
 }
+
+// New interfaces for sorting and filtering
+type SortableColumn = 'driftRate' | 'hyperliquidRate' | 'gmxRate' | 'lighterRate' | 'paradexRate' | 'maxSpread' | 'optimalAPR';
+type SortDirection = 'asc' | 'desc';
+
+interface SortConfig {
+  column: SortableColumn;
+  direction: SortDirection;
+}
+
+type Protocol = 'Hyperliquid' | 'Drift' | 'Lighter' | 'Paradex' | 'GMX' | 'Spot';
+
 
 interface ArbitrageOpportunity {
   asset: string;
@@ -284,6 +298,14 @@ export default function FundingArbitrageDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [selectedOpportunity, setSelectedOpportunity] = useState<ArbitrageOpportunity | null>(null);
   const [showHistoricalAnalysis, setShowHistoricalAnalysis] = useState(false);
+  
+  // New state for filtering and sorting
+  const [assetSearch, setAssetSearch] = useState<string>('');
+  const [selectedProtocols, setSelectedProtocols] = useState<Protocol[]>([]);
+  const [sortConfig, setSortConfig] = useState<SortConfig>({
+    column: 'maxSpread',
+    direction: 'desc'
+  });
 
   // Use the optimized WebSocket context
   const { isConnected: lighterWsConnected, marketData: lighterData, lastUpdateTime } = useWebSocket();
@@ -315,6 +337,24 @@ export default function FundingArbitrageDashboard() {
     }
   }, []);
   
+  // Handler for asset search input changes
+  const handleAssetSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    setAssetSearch(e.target.value);
+  }, []);
+
+  // Handler for clearing asset search
+  const handleClearAssetSearch = useCallback(() => {
+    setAssetSearch('');
+  }, []);
+
+  // Handler for sorting column
+  const handleSortColumn = useCallback((column: SortableColumn) => {
+    setSortConfig(prev => ({
+      column,
+      direction: prev.column === column && prev.direction === 'desc' ? 'asc' : 'desc'
+    }));
+  }, []);
+
   // Calculate opportunities - memoized based on data dependencies
   const opportunities = useMemo(() => {
     const opportunityMap = new Map<string, ArbitrageOpportunity>();
@@ -549,12 +589,80 @@ export default function FundingArbitrageDashboard() {
       opp.maxPriceDeviation = maxRate * 100;
     });
 
-    // Filter out opportunities with no available platforms (except spot) and sort by APR
+    // Filter out opportunities with no available platforms (except spot)
     const opportunitiesArray = Array.from(opportunityMap.values())
-    .filter(opp => opp.driftData.available || opp.hyperliquidData.available || opp.gmxData.available || opp.lighterData.available || opp.paradexData.available)      .sort((a, b) => b.currentAPR - a.currentAPR);
+      .filter(opp => 
+        opp.driftData.available || 
+        opp.hyperliquidData.available || 
+        opp.gmxData.available || 
+        opp.lighterData.available || 
+        opp.paradexData.available
+      );
     
     return opportunitiesArray;
   }, [externalData, lighterData, lastUpdateTime]);
+
+  // Apply filters and sorting to opportunities
+  const filteredAndSortedOpportunities = useMemo(() => {
+    return opportunities
+      // Filter by asset search term
+      .filter(opp => {
+        if (!assetSearch.trim()) return true;
+        return opp.asset.toLowerCase().includes(assetSearch.toLowerCase());
+      })
+      // Filter by selected protocols in Best Strategy
+      .filter(opp => {
+        if (selectedProtocols.length === 0) return true;
+        
+        // Extract protocols from bestStrategy
+        // Example bestStrategy: "Long Hyperliquid / Short Drift"
+        const bestStrategy = opp.bestStrategy.toLowerCase();
+        return selectedProtocols.some(protocol => 
+          bestStrategy.includes(protocol.toLowerCase())
+        );
+      })
+      // Apply sorting
+      .sort((a, b) => {
+        let valueA: number = 0;
+        let valueB: number = 0;
+        
+        switch (sortConfig.column) {
+          case 'driftRate':
+            valueA = a.driftData.available ? a.driftData.rate : -999;
+            valueB = b.driftData.available ? b.driftData.rate : -999;
+            break;
+          case 'hyperliquidRate':
+            valueA = a.hyperliquidData.available ? a.hyperliquidData.rate : -999;
+            valueB = b.hyperliquidData.available ? b.hyperliquidData.rate : -999;
+            break;
+          case 'gmxRate':
+            valueA = a.gmxData.available ? a.gmxData.rate : -999;
+            valueB = b.gmxData.available ? b.gmxData.rate : -999;
+            break;
+          case 'lighterRate':
+            valueA = a.lighterData.available ? a.lighterData.rate : -999;
+            valueB = b.lighterData.available ? b.lighterData.rate : -999;
+            break;
+          case 'paradexRate':
+            valueA = a.paradexData.available ? a.paradexData.rate : -999;
+            valueB = b.paradexData.available ? b.paradexData.rate : -999;
+            break;
+          case 'maxSpread':
+            valueA = a.maxSpread;
+            valueB = b.maxSpread;
+            break;
+          case 'optimalAPR':
+            valueA = a.currentAPR;
+            valueB = b.currentAPR;
+            break;
+        }
+        
+        // Apply sort direction
+        return sortConfig.direction === 'asc' 
+          ? valueA - valueB 
+          : valueB - valueA;
+      });
+  }, [opportunities, assetSearch, selectedProtocols, sortConfig]);
 
   // Initial load
   useEffect(() => {
@@ -641,10 +749,84 @@ export default function FundingArbitrageDashboard() {
           )}
           
           {lastUpdate && (
-            <div className="text-sm text-muted-foreground mb-4">
+            <div className="text-sm text-muted-foreground mb-2">
               Last updated: {lastUpdate.toLocaleTimeString()}
             </div>
           )}
+
+          {/* Asset search input */}
+          <div className="flex flex-wrap gap-4 mb-4">
+            <div className="relative flex-1 min-w-[200px]">
+              <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
+                <Search className="h-4 w-4 text-muted-foreground" />
+              </div>
+              <Input
+                type="text"
+                placeholder="Search by asset..."
+                value={assetSearch}
+                onChange={handleAssetSearchChange}
+                className="pl-10 pr-10 h-9"
+              />
+              {assetSearch && (
+                <button 
+                  onClick={handleClearAssetSearch}
+                  className="absolute inset-y-0 right-0 flex items-center pr-3"
+                >
+                  <X className="h-4 w-4 text-muted-foreground hover:text-foreground" />
+                </button>
+              )}
+            </div>
+
+            {/* Best Strategy protocol filter */}
+            <Select 
+              value={selectedProtocols.length > 0 ? 'filtered' : 'all'}
+              onValueChange={(value) => {
+                if (value === 'all') {
+                  setSelectedProtocols([]);
+                }
+              }}
+            >
+              <SelectTrigger className="h-9 w-[220px]">
+                <SelectValue>
+                  {selectedProtocols.length > 0 
+                    ? selectedProtocols.length === 1 
+                      ? selectedProtocols[0] 
+                      : `${selectedProtocols.length} protocols selected`
+                    : "All protocols"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All protocols</SelectItem>
+                {['Hyperliquid', 'Drift', 'Lighter', 'Paradex', 'GMX'].map((protocol) => (
+                  <div 
+                    key={protocol} 
+                    className="flex items-center space-x-2 px-2 py-1.5 cursor-pointer hover:bg-accent"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setSelectedProtocols(prev => {
+                        const protocolTyped = protocol as Protocol;
+                        if (prev.includes(protocolTyped)) {
+                          return prev.filter(p => p !== protocolTyped);
+                        } else {
+                          return [...prev, protocolTyped];
+                        }
+                      });
+                    }}
+                  >
+                    <div className={`w-4 h-4 border rounded ${selectedProtocols.includes(protocol as Protocol) ? 'bg-primary border-primary' : 'border-input'}`}>
+                      {selectedProtocols.includes(protocol as Protocol) && (
+                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3 text-primary-foreground">
+                          <polyline points="20 6 9 17 4 12" />
+                        </svg>
+                      )}
+                    </div>
+                    <span>{protocol}</span>
+                  </div>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
 
           <div className="rounded-md border overflow-x-auto">
             <table className="w-full">
@@ -652,53 +834,156 @@ export default function FundingArbitrageDashboard() {
                 <tr>
                   <th className="px-4 py-3 text-left text-sm font-medium">Asset</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">
-                    <TooltipProvider>
-                      <TooltipComponent>
-                        <TooltipTrigger>Drift Rate</TooltipTrigger>
-                        <TooltipContent>8-hour funding rate</TooltipContent>
-                      </TooltipComponent>
-                    </TooltipProvider>
+                    <button
+                      className="flex items-center space-x-1 hover:text-primary transition-colors" 
+                      onClick={() => handleSortColumn('driftRate')}
+                    >
+                      <TooltipProvider>
+                        <TooltipComponent>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center space-x-1">
+                              <span>Drift Rate</span>
+                              {sortConfig.column === 'driftRate' && (
+                                sortConfig.direction === 'asc' ? 
+                                  <ChevronUp className="h-3 w-3" /> : 
+                                  <ChevronDown className="h-3 w-3" />
+                              )}
+                              {sortConfig.column !== 'driftRate' && <ArrowUpDown className="h-3 w-3 opacity-50" />}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>8-hour funding rate</TooltipContent>
+                        </TooltipComponent>
+                      </TooltipProvider>
+                    </button>
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium">
-                    <TooltipProvider>
-                      <TooltipComponent>
-                        <TooltipTrigger>Hyperliquid Rate</TooltipTrigger>
-                        <TooltipContent>8-hour funding rate</TooltipContent>
-                      </TooltipComponent>
-                    </TooltipProvider>
+                    <button
+                      className="flex items-center space-x-1 hover:text-primary transition-colors" 
+                      onClick={() => handleSortColumn('hyperliquidRate')}
+                    >
+                      <TooltipProvider>
+                        <TooltipComponent>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center space-x-1">
+                              <span>Hyperliquid Rate</span>
+                              {sortConfig.column === 'hyperliquidRate' && (
+                                sortConfig.direction === 'asc' ? 
+                                  <ChevronUp className="h-3 w-3" /> : 
+                                  <ChevronDown className="h-3 w-3" />
+                              )}
+                              {sortConfig.column !== 'hyperliquidRate' && <ArrowUpDown className="h-3 w-3 opacity-50" />}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>8-hour funding rate</TooltipContent>
+                        </TooltipComponent>
+                      </TooltipProvider>
+                    </button>
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium">
-                    <TooltipProvider>
-                      <TooltipComponent>
-                        <TooltipTrigger>GMX Rate</TooltipTrigger>
-                        <TooltipContent>Hourly funding rate (approx)</TooltipContent>
-                      </TooltipComponent>
-                    </TooltipProvider>
+                    <button
+                      className="flex items-center space-x-1 hover:text-primary transition-colors" 
+                      onClick={() => handleSortColumn('gmxRate')}
+                    >
+                      <TooltipProvider>
+                        <TooltipComponent>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center space-x-1">
+                              <span>GMX Rate</span>
+                              {sortConfig.column === 'gmxRate' && (
+                                sortConfig.direction === 'asc' ? 
+                                  <ChevronUp className="h-3 w-3" /> : 
+                                  <ChevronDown className="h-3 w-3" />
+                              )}
+                              {sortConfig.column !== 'gmxRate' && <ArrowUpDown className="h-3 w-3 opacity-50" />}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>Hourly funding rate (approx)</TooltipContent>
+                        </TooltipComponent>
+                      </TooltipProvider>
+                    </button>
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium">
-                    <TooltipProvider>
-                      <TooltipComponent>
-                        <TooltipTrigger>Lighter Rate</TooltipTrigger>
-                        <TooltipContent>Hourly funding rate</TooltipContent>
-                      </TooltipComponent>
-                    </TooltipProvider>
+                    <button
+                      className="flex items-center space-x-1 hover:text-primary transition-colors" 
+                      onClick={() => handleSortColumn('lighterRate')}
+                    >
+                      <TooltipProvider>
+                        <TooltipComponent>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center space-x-1">
+                              <span>Lighter Rate</span>
+                              {sortConfig.column === 'lighterRate' && (
+                                sortConfig.direction === 'asc' ? 
+                                  <ChevronUp className="h-3 w-3" /> : 
+                                  <ChevronDown className="h-3 w-3" />
+                              )}
+                              {sortConfig.column !== 'lighterRate' && <ArrowUpDown className="h-3 w-3 opacity-50" />}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>Hourly funding rate</TooltipContent>
+                        </TooltipComponent>
+                      </TooltipProvider>
+                    </button>
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium">
-                    <TooltipProvider>
-                      <TooltipComponent>
-                        <TooltipTrigger>Paradex Rate</TooltipTrigger>
-                        <TooltipContent>8-hour funding rate</TooltipContent>
-                      </TooltipComponent>
-                    </TooltipProvider>
+                    <button
+                      className="flex items-center space-x-1 hover:text-primary transition-colors" 
+                      onClick={() => handleSortColumn('paradexRate')}
+                    >
+                      <TooltipProvider>
+                        <TooltipComponent>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center space-x-1">
+                              <span>Paradex Rate</span>
+                              {sortConfig.column === 'paradexRate' && (
+                                sortConfig.direction === 'asc' ? 
+                                  <ChevronUp className="h-3 w-3" /> : 
+                                  <ChevronDown className="h-3 w-3" />
+                              )}
+                              {sortConfig.column !== 'paradexRate' && <ArrowUpDown className="h-3 w-3 opacity-50" />}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>8-hour funding rate</TooltipContent>
+                        </TooltipComponent>
+                      </TooltipProvider>
+                    </button>
                   </th>
-                  <th className="px-4 py-3 text-left text-sm font-medium">Max Spread</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">
-                    <TooltipProvider>
-                      <TooltipComponent>
-                        <TooltipTrigger>Optimal APR</TooltipTrigger>
-                        <TooltipContent>Annualized return from spread</TooltipContent>
-                      </TooltipComponent>
-                    </TooltipProvider>
+                    <button
+                      className="flex items-center space-x-1 hover:text-primary transition-colors" 
+                      onClick={() => handleSortColumn('maxSpread')}
+                    >
+                      <span>Max Spread</span>
+                      {sortConfig.column === 'maxSpread' && (
+                        sortConfig.direction === 'asc' ? 
+                          <ChevronUp className="h-3 w-3" /> : 
+                          <ChevronDown className="h-3 w-3" />
+                      )}
+                      {sortConfig.column !== 'maxSpread' && <ArrowUpDown className="h-3 w-3 opacity-50" />}
+                    </button>
+                  </th>
+                  <th className="px-4 py-3 text-left text-sm font-medium">
+                    <button
+                      className="flex items-center space-x-1 hover:text-primary transition-colors" 
+                      onClick={() => handleSortColumn('optimalAPR')}
+                    >
+                      <TooltipProvider>
+                        <TooltipComponent>
+                          <TooltipTrigger asChild>
+                            <div className="flex items-center space-x-1">
+                              <span>Optimal APR</span>
+                              {sortConfig.column === 'optimalAPR' && (
+                                sortConfig.direction === 'asc' ? 
+                                  <ChevronUp className="h-3 w-3" /> : 
+                                  <ChevronDown className="h-3 w-3" />
+                              )}
+                              {sortConfig.column !== 'optimalAPR' && <ArrowUpDown className="h-3 w-3 opacity-50" />}
+                            </div>
+                          </TooltipTrigger>
+                          <TooltipContent>Annualized return from spread</TooltipContent>
+                        </TooltipComponent>
+                      </TooltipProvider>
+                    </button>
                   </th>
                   <th className="px-4 py-3 text-left text-sm font-medium">Best Strategy</th>
                   <th className="px-4 py-3 text-left text-sm font-medium">Open Interest</th>
@@ -719,14 +1004,14 @@ export default function FundingArbitrageDashboard() {
                       <Loader2 className="h-8 w-8 animate-spin mx-auto" />
                     </td>
                   </tr>
-                ) : opportunities.length === 0 ? (
+                ) : filteredAndSortedOpportunities.length === 0 ? (
                   <tr>
                     <td colSpan={10} className="text-center py-8 text-muted-foreground">
-                      No opportunities found
+                      {assetSearch || selectedProtocols.length > 0 ? 'No matches found for current filters' : 'No opportunities found'}
                     </td>
                   </tr>
                 ) : (
-                  opportunities.map((opp) => (
+                  filteredAndSortedOpportunities.map((opp) => (
                     <OpportunityRow
                       key={opp.asset}
                       opportunity={opp}

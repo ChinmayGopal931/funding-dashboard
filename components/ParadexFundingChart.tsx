@@ -271,7 +271,7 @@ function ParadexFundingRatesChart() {
 
   useEffect(() => {
     fetchAllData();
-  }, [selectedMarkets, timePeriod]);
+  }, [fetchAllData]);
 
   const generateColor = (symbol: string) => {
     if (COLORS[symbol]) return COLORS[symbol];
@@ -335,7 +335,7 @@ function ParadexFundingRatesChart() {
     <div className="w-full mx-auto p-6 space-y-6">
       <Card>
         <CardHeader>
-          <CardTitle className="flex items-center justify-between">
+          <CardTitle className="flex items-center justify-between font-bold">
             Paradex Funding Rates Analysis - Top 10 Markets
             <div className="flex items-center gap-2">
               <select
@@ -387,13 +387,14 @@ function ParadexFundingRatesChart() {
                       onClick={() => toggleMarket(market.symbol)}
                       className={`p-2 text-xs rounded-md border text-left ${
                         isSelected
-                          ? 'bg-blue-100 border-blue-300 text-blue-800'
+                          ? 'bg-[#efe2ff] text-[#891EF6]'
                           : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
                       }`}
+                      style={isSelected ? { borderColor: generateColor(market.symbol) } : {}}
                     >
-                      <div className="font-medium">{market.symbol}</div>
-                      <div className="text-xs opacity-75">Rate: {fundingRate8h}%</div>
-                      <div className="text-xs opacity-75">APR: {fundingRateAPR}%</div>
+                      <div className="font-bold">{market.symbol}</div>
+                      <div className="text-xs">Rate: {fundingRate8h}%</div>
+                      <div className="text-xs">APR: {fundingRateAPR}%</div>
                     </button>
                   );
                 })}

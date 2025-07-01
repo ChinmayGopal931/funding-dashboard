@@ -393,7 +393,7 @@ export default function ZkLighterMultiFundingChart() {
                       onClick={() => toggleMarket(ticker)}
                       className={`p-2 text-xs rounded-md border text-left ${
                         isSelected
-                          ? 'bg-blue-100 border-blue-300 text-blue-800'
+                          ? 'bg-[#F0F2F5] text-[#386CDB]'
                           : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
                       }`}
                       style={isSelected ? { borderColor: color } : {}}
