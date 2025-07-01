@@ -18,7 +18,7 @@ import {
 } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Loader2, RefreshCw } from "lucide-react";
-import { COLORS, MARKET_MAPPING, fetchAllLighterMarkets, LighterMarket } from "@/lib/utils";
+import { COLORS, fetchAllLighterMarkets, LighterMarket } from "@/lib/utils";
 import { ChartContainer, ChartTooltip } from "@/components/ui/chart";
 
 interface FundingDataPoint {
@@ -110,7 +110,6 @@ export default function ZkLighterMultiFundingChart() {
         
         // Use cached data if available and not expired
         if (cachedData && (now - cachedData.timestamp) < cacheExpiration) {
-          // console.log(`Using cached data for market ID ${id}`);
           return Promise.resolve(cachedData.data);
         }
         
@@ -317,9 +316,6 @@ export default function ZkLighterMultiFundingChart() {
     // If no historical data, try to get the current rate from topMarkets
     const marketSymbol = ticker.replace('-PERP', '');
     const marketInfo = topMarkets.find(m => m.symbol === marketSymbol);
-    
-    // For debugging
-    // console.log('Market info for', marketSymbol, marketInfo);
     
     if (marketInfo) {
       // Try latestRate first (which is set during market fetching)
@@ -548,7 +544,7 @@ export default function ZkLighterMultiFundingChart() {
             <p><strong>APR Formula:</strong> Hourly rate × 24 × 365 gives the annualized percentage rate.</p>
             <p><strong>Market Comparison:</strong> Compare rates across markets to identify arbitrage opportunities.</p>
             <p><strong>Risk Assessment:</strong> Higher funding rates may indicate higher volatility and risk.</p>
-            <p><strong>Data Source:</strong> Real-time data from ZkLighter Protocol's public API.</p>
+            <p><strong>Data Source:</strong> Real-time data from ZkLighter Protocol&apos;s public API.</p>
           </div>
         </CardContent>
       </Card>

@@ -167,10 +167,10 @@ async function fetchLighterHistoricalRates(marketId: number, days: number): Prom
   }
 }
 
-async function fetchGMXHistoricalRates(asset: string, days: number): Promise<FundingDataPoint[]> {
+/* eslint-disable @typescript-eslint/no-unused-vars */
+async function fetchGMXHistoricalRates(_asset: string, _days: number): Promise<FundingDataPoint[]> {
   // GMX doesn't provide historical funding rate data via API
   // Return empty array to handle gracefully in the UI
-  // console.log(`GMX historical data not available for ${asset} (${days} days)`);
   return [];
 }
 
@@ -200,7 +200,6 @@ async function fetchParadexHistoricalRates(
       if (cursor) params.append('cursor', cursor);
 
       const requestUrl = `https://api.prod.paradex.trade/v1/funding/data?${params}`;
-      // console.log(`[Paradex] Fetching page ${page}: ${requestUrl}`);
       
       const response = await fetch(requestUrl, { headers: { 'Accept': 'application/json' } });
       if (!response.ok) {
@@ -208,7 +207,6 @@ async function fetchParadexHistoricalRates(
         break;
       }
       const data: ParadexFundingResponse = await response.json();
-      // console.log(`[Paradex] Page ${page} results: ${data.results?.length ?? 0}, next: ${data.next ? 'yes' : 'no'}`);
 
       const pageResults = data.results || [];
       allData.push(...pageResults);
@@ -234,7 +232,6 @@ async function fetchParadexHistoricalRates(
       .filter(entry => entry.created_at >= startTime && entry.created_at <= endTime)
       .sort((a, b) => a.created_at - b.created_at);
 
-    // console.log(`[Paradex] Total entries fetched: ${allData.length}. In-range entries: ${filteredData.length}`);
     
     // Convert to the expected format
     return filteredData.map(entry => {
@@ -355,8 +352,6 @@ export default function HistoricalAnalysis({ opportunity, onBack, lighterMarketI
         }
         
         const results = await Promise.all(promises);
-
-        // console.log(results)
 
         // Merge all data points by timestamp
         const dataMap = new Map<number, FundingDataPoint>();

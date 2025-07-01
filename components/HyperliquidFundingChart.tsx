@@ -8,8 +8,6 @@ import { Loader2, RefreshCw } from 'lucide-react';
 
 const TOKENS = ['PURR', 'SOL', 'ETH', 'BTC', 'HYPE', 'ZORA', 'JTO', 'BONK', 'PYTH', 'WIF'] as const;
 
-type TokenType = typeof TOKENS[number];
-
 const COLORS: Record<string, string> = {
   'PURR': '#8b5cf6',
   'SOL': '#06d6a0',
