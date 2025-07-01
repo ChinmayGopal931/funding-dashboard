@@ -5,6 +5,7 @@ import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, RefreshCw } from 'lucide-react';
+import { TIME_PERIODS } from '@/lib/types';
 
 const TOKENS = ['PURR', 'SOL', 'ETH', 'BTC', 'HYPE', 'ZORA', 'JTO', 'BONK', 'PYTH', 'WIF'] as const;
 
@@ -85,12 +86,7 @@ async function fetchFundingHistory(coin: string, startTime: number, endTime: num
   }
 }
 
-// Define time period options
-const TIME_PERIODS = [
-  { value: '24h', label: '24 Hours', hours: 24 },
-  { value: '7d', label: '7 Days', hours: 24 * 7 },
-  { value: '14d', label: '14 Days', hours: 24 * 14 },
-];
+
 
 function FundingRatesChart() {
   const [data, setData] = useState<ProcessedDataPoint[]>([]);
@@ -141,7 +137,6 @@ function FundingRatesChart() {
       });
       
       const results = await Promise.all(promises);
-      console.log("Funding data fetched for tokens:", results);
       
       // Combine all data into a single array with timestamps
       const combinedData: Record<number, ProcessedDataPoint> = {};

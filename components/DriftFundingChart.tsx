@@ -5,6 +5,7 @@ import { ChartContainer, ChartTooltip } from '@/components/ui/chart';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Loader2, RefreshCw } from 'lucide-react';
+import { TIME_PERIODS } from '@/lib/types';
 
 const COLORS: Record<string, string> = {
   'SOL-PERP': '#8b5cf6',
@@ -111,13 +112,6 @@ async function fetchDriftFundingRates(marketSymbol: string): Promise<DriftFundin
   }
 }
 
-// Define time period options similar to LighterRateChart
-const TIME_PERIODS = [
-  { value: '24h', label: '24 Hours', hours: 24 },
-  { value: '7d', label: '7 Days', hours: 24 * 7 },
-  { value: '14d', label: '14 Days', hours: 24 * 14 },
-  { value: '30d', label: '30 Days', hours: 24 * 30 },
-];
 
 function DriftFundingRatesChart() {
   const [data, setData] = useState<ProcessedDataPoint[]>([]);

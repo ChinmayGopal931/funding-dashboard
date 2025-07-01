@@ -547,11 +547,11 @@ export default function FundingArbitrageDashboard() {
               )}
             </div>
 
-            {/* Protocol filters - side by side */}
-            <div className="flex flex-row gap-6 items-center">
+            {/* Protocol filters – mobile-first */}
+            <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
               {/* All Protocol filter */}
-              <div className="flex items-center gap-3">
-                <label className="text-sm font-medium">All Protocol:</label>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                <label className="text-sm font-medium">All Platforms:</label>
                 <Select 
                   value={selectedAvailableProtocols.length > 0 ? 'filtered' : 'all'}
                   onValueChange={(value) => {
@@ -560,17 +560,17 @@ export default function FundingArbitrageDashboard() {
                     }
                   }}
                 >
-                  <SelectTrigger className="h-9 w-[180px]">
+                  <SelectTrigger className="h-9 w-full sm:w-[180px]">
                     <SelectValue>
                       {selectedAvailableProtocols.length > 0 
                         ? selectedAvailableProtocols.length === 1 
                           ? selectedAvailableProtocols[0] 
-                          : `${selectedAvailableProtocols.length} protocols selected`
-                        : "All Protocols"}
+                          : `${selectedAvailableProtocols.length} platforms selected`
+                        : "Platform"}
                     </SelectValue>
                   </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">All Protocols</SelectItem>
+                  <SelectContent className="w-[calc(100vw-2rem)] sm:w-auto max-w-[280px]">
+                    <SelectItem value="all">All Platforms</SelectItem>
                     {['Hyperliquid', 'Drift', 'Lighter', 'Paradex', 'GMX'].map((protocol) => (
                       <div 
                         key={protocol} 
@@ -603,8 +603,8 @@ export default function FundingArbitrageDashboard() {
               </div>
 
               {/* Best Strategy protocol filter */}
-              <div className="flex items-center gap-3">
-                <label className="text-sm font-medium">Best Strategy:</label>
+              <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
+                <label className="text-sm font-medium shrink-0">Best Strategy:</label>
                 <Select 
                   value={selectedProtocols.length > 0 ? 'filtered' : 'all'}
                   onValueChange={(value) => {
@@ -613,46 +613,46 @@ export default function FundingArbitrageDashboard() {
                     }
                   }}
                 >
-                <SelectTrigger className="h-9 w-[220px]">
-                  <SelectValue>
-                    {selectedProtocols.length > 0 
-                      ? selectedProtocols.length === 1 
-                        ? selectedProtocols[0] 
-                        : `${selectedProtocols.length} protocols selected`
-                      : "Best Strategy"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All protocols</SelectItem>
-                  {['Hyperliquid', 'Drift', 'Lighter', 'Paradex', 'GMX'].map((protocol) => (
-                  <div 
-                    key={protocol} 
-                    className="flex items-center space-x-2 px-2 py-1.5 cursor-pointer hover:bg-accent"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      setSelectedProtocols(prev => {
-                        const protocolTyped = protocol as Protocol;
-                        if (prev.includes(protocolTyped)) {
-                          return prev.filter(p => p !== protocolTyped);
-                        } else {
-                          return [...prev, protocolTyped];
-                        }
-                      });
-                    }}
-                  >
-                    <div className={`w-4 h-4 border rounded ${selectedProtocols.includes(protocol as Protocol) ? 'bg-primary border-primary' : 'border-input'}`}>
-                      {selectedProtocols.includes(protocol as Protocol) && (
-                        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3 text-primary-foreground">
-                          <polyline points="20 6 9 17 4 12" />
-                        </svg>
-                      )}
-                    </div>
-                    <span>{protocol}</span>
-                  </div>
-                ))}
-                </SelectContent>
-              </Select>
+                  <SelectTrigger className="h-9 w-full sm:w-[220px] md:w-[240px]">
+                    <SelectValue>
+                      {selectedProtocols.length > 0 
+                        ? selectedProtocols.length === 1 
+                          ? selectedProtocols[0] 
+                          : `${selectedProtocols.length} selected`
+                        : "Best Strategy"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent className="w-[calc(100vw-2rem)] sm:w-auto max-w-[280px]">
+                    <SelectItem value="all">All protocols</SelectItem>
+                    {['Hyperliquid', 'Drift', 'Lighter', 'Paradex', 'GMX'].map((protocol) => (
+                      <div 
+                        key={protocol} 
+                        className="flex items-center space-x-2 px-2 py-2 cursor-pointer hover:bg-accent rounded-sm"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setSelectedProtocols(prev => {
+                            const protocolTyped = protocol as Protocol;
+                            if (prev.includes(protocolTyped)) {
+                              return prev.filter(p => p !== protocolTyped);
+                            } else {
+                              return [...prev, protocolTyped];
+                            }
+                          });
+                        }}
+                      >
+                        <div className={`w-4 h-4 border rounded flex items-center justify-center ${selectedProtocols.includes(protocol as Protocol) ? 'bg-primary border-primary' : 'border-input'}`}>
+                          {selectedProtocols.includes(protocol as Protocol) && (
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3 text-primary-foreground">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
+                        </div>
+                        <span className="text-sm">{protocol}</span>
+                      </div>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
               
               {/* Clear filters button */}
