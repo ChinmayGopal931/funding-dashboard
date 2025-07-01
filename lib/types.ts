@@ -1,5 +1,31 @@
 // types.ts - Centralized type definitions
 
+import { GMXMarket, ParadexMarket } from "./utils";
+
+
+interface PlatformData {
+  rate: number;
+  available: boolean;
+}
+
+
+export interface LighterStats {
+  market_id: number;
+  index_price: string;
+  mark_price: string;
+  last_trade_price: string;
+  current_funding_rate: string;
+  funding_rate: string;
+  funding_timestamp: number;
+  daily_base_token_volume: number;
+  daily_quote_token_volume: number;
+  daily_price_low: number;
+  daily_price_high: number;
+  daily_price_change: number;
+}
+
+
+// Interfaces
 export interface DriftContract {
   base_currency: string;
   base_volume: string;
@@ -41,33 +67,36 @@ export interface HyperliquidAssetContext {
   prevDayPx: string;
 }
 
-export interface ArbitrageOpportunity {
-  coin: string;
-  driftOI: number;
-  hyperliquidOI: number;
-  driftRate: number;
-  hyperliquidRate: number;
-  driftRateAPR: number;
-  hyperliquidRateAPR: number;
-  arbitrageSpread: number;
-  crossExchangeDirection: 'long-drift' | 'long-hyperliquid' | 'neutral';
-  crossExchangeDailyProfit: number;
-  crossExchangeAnnualProfit: number;
-  hasSpotMarket: boolean;
-  spotPrice?: number;
-  spotPerpDailyProfit?: number;
-  spotPerpAnnualProfit?: number;
-  spotPerpExchange?: 'drift' | 'hyperliquid';
-  spotPerpDirection?: 'long' | 'short';
-  altSpotPerpProfit?: number;
-  altSpotPerpExchange?: 'drift' | 'hyperliquid';
-  bestStrategy: 'cross-exchange' | 'spot-perp' | 'none';
-  bestStrategyDailyProfit: number;
-  bestStrategyAPR: number;
-  driftMarkPrice: number;
-  hyperliquidMarkPrice: number;
-  priceDeviation: number;
+interface PlatformData {
+  rate: number;
+  available: boolean;
 }
+
+
+
+export interface ArbitrageOpportunity {
+  asset: string;
+  driftData: PlatformData;
+  hyperliquidData: PlatformData;
+  lighterData: PlatformData;
+  gmxData: PlatformData;
+  paradexData: PlatformData; // Add this
+  maxSpread: number;
+  currentAPR: number;
+  bestStrategy: string;
+  openInterest: number;
+  openInterestDrift: number;
+  openInterestHyperliquid: number;
+  openInterestLighter: number;
+  openInterestParadex: number; // Add this
+  gmxMarket?: GMXMarket;
+  paradexMarket?: ParadexMarket; // Add this
+  maxPriceDeviation: number;
+  driftContract?: DriftContract;
+  hyperliquidContext?: HyperliquidAssetContext;
+  lighterStats?: LighterStats;
+}
+
 
 export interface DriftFundingRate {
   txSig: string;
