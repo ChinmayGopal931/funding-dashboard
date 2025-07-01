@@ -167,12 +167,171 @@ async function fetchLighterHistoricalRates(marketId: number, days: number): Prom
   }
 }
 
-/* eslint-disable @typescript-eslint/no-unused-vars */
-async function fetchGMXHistoricalRates(_asset: string, _days: number): Promise<FundingDataPoint[]> {
-  // GMX doesn't provide historical funding rate data via API
-  // Return empty array to handle gracefully in the UI
-  return [];
+async function fetchGMXHistoricalRates(asset: string, days: number): Promise<FundingDataPoint[]> {
+  console.log(`[GMX] Fetching historical rates for ${asset}, ${days} days`);
+  
+  try {
+    // Use proxy API with asset filtering
+    const proxyUrl = '/api/dune-proxy';
+    const queryId = '4562744';
+    const limit = Math.min(days * 2, 100); // Daily data, so days*2 should be plenty. Limit to 100 for efficiency
+    
+    console.log(`[GMX] Calling proxy with queryId: ${queryId}, limit: ${limit}, asset: ${asset}`);
+    
+    const response = await fetch(proxyUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        queryId,
+        limit,
+        asset: asset.toUpperCase(),
+      }),
+    });
+    
+    if (!response.ok) {
+      console.error(`[GMX] Proxy API error: ${response.status} ${response.statusText}`);
+      const errorText = await response.text();
+      console.error(`[GMX] Error response body:`, errorText);
+      return [];
+    }
+    
+    const data = await response.json();
+    console.log(`[GMX] Filtered response for ${asset}:`, JSON.stringify(data, null, 2));
+    
+    // Check if we have the expected structure
+    if (!data?.result?.rows || !Array.isArray(data.result.rows)) {
+      console.error(`[GMX] Invalid response format:`, typeof data);
+      return [];
+    }
+    
+    const rows = data.result.rows;
+    console.log(`[GMX] Found ${rows.length} pre-filtered rows for ${asset}`);
+    
+    if (rows.length === 0) {
+      console.warn(`[GMX] No data found for ${asset}`);
+      return [];
+    }
+    
+    // Log first few rows to understand structure
+    console.log(`[GMX] Sample data:`, JSON.stringify(rows.slice(0, 3), null, 2));
+    
+    // Filter data for the requested time window
+    const cutoffTime = Date.now() - days * 24 * 60 * 60 * 1000;
+    console.log(`[GMX] Filtering data after:`, new Date(cutoffTime).toISOString());
+    
+    // Transform to expected format
+    const transformedData: FundingDataPoint[] = [];
+    
+    rows.forEach((row: any, index: number) => {
+      try {
+        if (index < 5) {
+          console.log(`[GMX] Processing row ${index}:`, row);
+        }
+        
+        // Extract timestamp from block_date (format: "2025-06-30")
+        const blockDate = row.block_date;
+        if (!blockDate || typeof blockDate !== 'string') {
+          if (index < 5) console.log(`  Skipping row ${index} - no block_date:`, blockDate);
+          return;
+        }
+        
+        // Convert date string to timestamp (use noon UTC to avoid timezone issues)
+        const timestamp = new Date(`${blockDate}T12:00:00Z`).getTime();
+        if (isNaN(timestamp)) {
+          if (index < 5) console.log(`  Skipping row ${index} - invalid date:`, blockDate);
+          return;
+        }
+        
+        // Check if data is within requested time range
+        if (timestamp <= cutoffTime) {
+          if (index < 5) console.log(`  Skipping row ${index} - too old:`, new Date(timestamp).toISOString());
+          return;
+        }
+        
+        if (index < 5) {
+          console.log(`  Valid timestamp:`, new Date(timestamp).toISOString());
+        }
+        
+        // Extract funding rates
+        const longRate = row.avg_long_net_rate;
+        const shortRate = row.avg_short_net_rate;
+        
+        if (index < 5) {
+          console.log(`  Long rate:`, longRate, typeof longRate);
+          console.log(`  Short rate:`, shortRate, typeof shortRate);
+        }
+        
+        // For GMX funding rates, we need to decide which rate to use
+        // Long rate = what longs pay (positive means longs pay shorts)
+        // Short rate = what shorts pay (negative means shorts pay longs)
+        // We'll use a weighted average or the more significant rate
+        
+        let fundingRate: number;
+        
+        // Handle the -10 special case (likely means no data or extreme value)
+        if (shortRate === -10 || longRate === -10) {
+          // Use the non -10 value
+          fundingRate = shortRate === -10 ? longRate : shortRate;
+          if (index < 5) console.log(`  Using non -10 rate:`, fundingRate);
+        } else {
+          // Use average of long and short rates for simplicity
+          // In practice, you might want to use the rate that corresponds to your strategy side
+          fundingRate = (longRate + shortRate) / 2;
+          if (index < 5) console.log(`  Using average rate:`, fundingRate);
+        }
+        
+        // Rates appear to already be in percentage format (e.g., 1.17 = 1.17%)
+        // Since this is daily data, convert to hourly by dividing by 24
+        const hourlyRate = fundingRate / 24;
+        
+        if (index < 5) {
+          console.log(`  Daily rate:`, fundingRate);
+          console.log(`  Hourly rate:`, hourlyRate);
+        }
+        
+        transformedData.push({
+          timestamp,
+          date: new Date(timestamp).toLocaleString(),
+          gmx: hourlyRate, // Already in percentage, now hourly
+          spot: 0,
+        });
+        
+      } catch (error) {
+        console.error(`[GMX] Error processing row ${index}:`, error, row);
+      }
+    });
+    
+    console.log(`[GMX] Transformed ${transformedData.length} data points from ${rows.length} rows`);
+    
+    if (transformedData.length > 0) {
+      console.log(`[GMX] Sample transformed data:`, transformedData.slice(0, 3));
+      console.log(`[GMX] Date range:`, {
+        from: new Date(Math.min(...transformedData.map(d => d.timestamp))).toISOString(),
+        to: new Date(Math.max(...transformedData.map(d => d.timestamp))).toISOString()
+      });
+      
+      // Log rate statistics
+      const rates = transformedData.map(d => d.gmx!).filter(r => r !== undefined);
+      if (rates.length > 0) {
+        console.log(`[GMX] Rate statistics:`, {
+          min: Math.min(...rates),
+          max: Math.max(...rates),
+          avg: rates.reduce((a, b) => a + b, 0) / rates.length,
+          count: rates.length
+        });
+      }
+    }
+    
+    return transformedData.sort((a, b) => a.timestamp - b.timestamp);
+    
+  } catch (error) {
+    console.error('[GMX] Error fetching historical rates:', error);
+    return [];
+  }
 }
+
 
 async function fetchParadexHistoricalRates(
   asset: string,
