@@ -326,14 +326,14 @@ function FundingRatesChart() {
                       onClick={() => toggleToken(token)}
                       className={`p-2 text-xs rounded-md border text-left ${
                         isSelected
-                          ? 'bg-blue-100 border-blue-300 text-blue-800'
+                          ? 'text-[#1A3833]'
                           : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
                       }`}
-                      style={isSelected ? { borderColor: color } : {}}
+                      style={isSelected ? { background: '#c4fff1', borderColor: color } : {}}
                     >
-                      <div className="font-medium">{token}</div>
-                      <div className="text-xs opacity-75">Rate: {stats.avg.toFixed(4)}%</div>
-                      <div className="text-xs opacity-75">APR: {(stats.avg * 24 * 365).toFixed(2)}%</div>
+                      <div className="font-bold">{token}</div>
+                      <div className="text-xs ">Rate: {stats.avg.toFixed(4)}%</div>
+                      <div className="text-xs ">APR: {(stats.avg * 24 * 365).toFixed(2)}%</div>
                     </button>
                   );
                 })}

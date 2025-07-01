@@ -101,7 +101,7 @@ export const OpportunityRow = memo(({
     </HoverCardTrigger>
     <HoverCardContent className="w-80 text-xs space-y-3 p-4 border shadow-lg rounded-md bg-popover text-popover-foreground dark:bg-zinc-900 dark:text-zinc-100">
       {opportunity.driftContract && (
-        <div>
+        <div className="p-2 rounded-md" style={{ backgroundColor: '#ffedd8' }}>
           <h4 className="font-medium text-sm mb-1">Drift</h4>
           <ul className="space-y-0.5">
             <li>Funding: {formatRate(opportunity.driftData.rate)}</li>
@@ -112,7 +112,7 @@ export const OpportunityRow = memo(({
         </div>
       )}
       {opportunity.hyperliquidContext && (
-        <div>
+        <div className="p-2 rounded-md" style={{ backgroundColor: '#c4fff1' }}>
           <h4 className="font-medium text-sm mb-1">Hyperliquid</h4>
           <ul className="space-y-0.5">
             <li>Funding: {formatRate(opportunity.hyperliquidData.rate)}</li>
@@ -123,7 +123,7 @@ export const OpportunityRow = memo(({
         </div>
       )}
       {opportunity.gmxMarket && (
-        <div>
+        <div className="p-2 rounded-md">
           <h4 className="font-medium text-sm mb-1">GMX</h4>
           <ul className="space-y-0.5">
             <li>Funding: {formatRate(opportunity.gmxData.rate)}</li>
@@ -142,7 +142,7 @@ export const OpportunityRow = memo(({
         </div>
       )}
       {opportunity.lighterStats && (
-        <div>
+        <div className="p-2 rounded-md" style={{ backgroundColor: '#EEF6FF' }}>
           <h4 className="font-medium text-sm mb-1">Lighter</h4>
           <ul className="space-y-0.5">
             <li>Funding: {formatRate(opportunity.lighterData.rate)}</li>
@@ -153,7 +153,7 @@ export const OpportunityRow = memo(({
         </div>
       )}
       {opportunity.paradexMarket && (
-        <div>
+        <div className="p-2 rounded-md bg-purple-100">
           <h4 className="font-medium text-sm mb-1">Paradex</h4>
           <ul className="space-y-0.5">
             <li>Funding: {formatRate(opportunity.paradexData.rate)}</li>

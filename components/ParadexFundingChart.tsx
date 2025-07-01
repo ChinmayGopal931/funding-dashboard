@@ -389,9 +389,9 @@ function ParadexFundingRatesChart() {
                           : 'bg-gray-50 border-gray-300 text-gray-600 hover:bg-gray-100'
                       }`}
                     >
-                      <div className="font-medium">{market.symbol.replace('-USD-PERP', '')}</div>
-                      <div className="text-xs opacity-75">8h: {fundingRate8h}%</div>
-                      <div className="text-xs opacity-75">APR: {fundingRateAPR}%</div>
+                      <div className="font-bold">{market.symbol.replace('-USD-PERP', '')}</div>
+                      <div className="text-xs">8h: {fundingRate8h}%</div>
+                      <div className="text-xs">APR: {fundingRateAPR}%</div>
                     </button>
                   );
                 })}
