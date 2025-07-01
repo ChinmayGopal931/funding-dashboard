@@ -302,6 +302,7 @@ export default function FundingArbitrageDashboard() {
   // New state for filtering and sorting
   const [assetSearch, setAssetSearch] = useState<string>('');
   const [selectedProtocols, setSelectedProtocols] = useState<Protocol[]>([]);
+  const [selectedAvailableProtocols, setSelectedAvailableProtocols] = useState<Protocol[]>([]);
   const [sortConfig, setSortConfig] = useState<SortConfig>({
     column: 'maxSpread',
     direction: 'desc'
@@ -345,6 +346,12 @@ export default function FundingArbitrageDashboard() {
   // Handler for clearing asset search
   const handleClearAssetSearch = useCallback(() => {
     setAssetSearch('');
+  }, []);
+
+  // Handler for clearing protocol filters
+  const handleClearProtocolFilters = useCallback(() => {
+    setSelectedAvailableProtocols([]);
+    setSelectedProtocols([]);
   }, []);
 
   // Handler for sorting column
@@ -610,16 +617,32 @@ export default function FundingArbitrageDashboard() {
         if (!assetSearch.trim()) return true;
         return opp.asset.toLowerCase().includes(assetSearch.toLowerCase());
       })
+      // Filter by selected available protocols
+      .filter(opp => {
+        if (selectedAvailableProtocols.length === 0) return true;
+        
+        return selectedAvailableProtocols.some(protocol => {
+          switch(protocol) {
+            case 'Hyperliquid':
+              return opp.hyperliquidData.available;
+            case 'Drift':
+              return opp.driftData.available;
+            case 'Lighter':
+              return opp.lighterData.available;
+            case 'Paradex':
+              return opp.paradexData.available;
+            case 'GMX':
+              return opp.gmxData.available;
+            default:
+              return false;
+          }
+        });
+      })
       // Filter by selected protocols in Best Strategy
       .filter(opp => {
         if (selectedProtocols.length === 0) return true;
-        
-        // Extract protocols from bestStrategy
-        // Example bestStrategy: "Long Hyperliquid / Short Drift"
         const bestStrategy = opp.bestStrategy.toLowerCase();
-        return selectedProtocols.some(protocol => 
-          bestStrategy.includes(protocol.toLowerCase())
-        );
+        return selectedProtocols.some(protocol => bestStrategy.includes(protocol.toLowerCase()));
       })
       // Apply sorting
       .sort((a, b) => {
@@ -755,8 +778,8 @@ export default function FundingArbitrageDashboard() {
           )}
 
           {/* Asset search input */}
-          <div className="flex flex-wrap gap-4 mb-4">
-            <div className="relative flex-1 min-w-[200px]">
+          <div className="flex flex-col gap-4 mb-4">
+            <div className="relative w-full">
               <div className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none">
                 <Search className="h-4 w-4 text-muted-foreground" />
               </div>
@@ -765,7 +788,7 @@ export default function FundingArbitrageDashboard() {
                 placeholder="Search by asset..."
                 value={assetSearch}
                 onChange={handleAssetSearchChange}
-                className="pl-10 pr-10 h-9"
+                className="pl-10 pr-10 h-9 w-full"
               />
               {assetSearch && (
                 <button 
@@ -777,27 +800,84 @@ export default function FundingArbitrageDashboard() {
               )}
             </div>
 
-            {/* Best Strategy protocol filter */}
-            <Select 
-              value={selectedProtocols.length > 0 ? 'filtered' : 'all'}
-              onValueChange={(value) => {
-                if (value === 'all') {
-                  setSelectedProtocols([]);
-                }
-              }}
-            >
-              <SelectTrigger className="h-9 w-[220px]">
-                <SelectValue>
-                  {selectedProtocols.length > 0 
-                    ? selectedProtocols.length === 1 
-                      ? selectedProtocols[0] 
-                      : `${selectedProtocols.length} protocols selected`
-                    : "All protocols"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">All protocols</SelectItem>
-                {['Hyperliquid', 'Drift', 'Lighter', 'Paradex', 'GMX'].map((protocol) => (
+            {/* Protocol filters - side by side */}
+            <div className="flex flex-row gap-6 items-center">
+              {/* All Protocol filter */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium">All Protocol:</label>
+                <Select 
+                  value={selectedAvailableProtocols.length > 0 ? 'filtered' : 'all'}
+                  onValueChange={(value) => {
+                    if (value === 'all') {
+                      setSelectedAvailableProtocols([]);
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-9 w-[180px]">
+                    <SelectValue>
+                      {selectedAvailableProtocols.length > 0 
+                        ? selectedAvailableProtocols.length === 1 
+                          ? selectedAvailableProtocols[0] 
+                          : `${selectedAvailableProtocols.length} protocols selected`
+                        : "All Protocols"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Protocols</SelectItem>
+                    {['Hyperliquid', 'Drift', 'Lighter', 'Paradex', 'GMX'].map((protocol) => (
+                      <div 
+                        key={protocol} 
+                        className="flex items-center space-x-2 px-2 py-1.5 cursor-pointer hover:bg-accent"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          setSelectedAvailableProtocols(prev => {
+                            const protocolTyped = protocol as Protocol;
+                            if (prev.includes(protocolTyped)) {
+                              return prev.filter(p => p !== protocolTyped);
+                            } else {
+                              return [...prev, protocolTyped];
+                            }
+                          });
+                        }}
+                      >
+                        <div className={`w-4 h-4 border rounded ${selectedAvailableProtocols.includes(protocol as Protocol) ? 'bg-primary border-primary' : 'border-input'}`}>
+                          {selectedAvailableProtocols.includes(protocol as Protocol) && (
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-3 h-3 text-primary-foreground">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                          )}
+                        </div>
+                        <span>{protocol}</span>
+                      </div>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Best Strategy protocol filter */}
+              <div className="flex items-center gap-3">
+                <label className="text-sm font-medium">Best Strategy:</label>
+                <Select 
+                  value={selectedProtocols.length > 0 ? 'filtered' : 'all'}
+                  onValueChange={(value) => {
+                    if (value === 'all') {
+                      setSelectedProtocols([]);
+                    }
+                  }}
+                >
+                <SelectTrigger className="h-9 w-[220px]">
+                  <SelectValue>
+                    {selectedProtocols.length > 0 
+                      ? selectedProtocols.length === 1 
+                        ? selectedProtocols[0] 
+                        : `${selectedProtocols.length} protocols selected`
+                      : "Best Strategy"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All protocols</SelectItem>
+                  {['Hyperliquid', 'Drift', 'Lighter', 'Paradex', 'GMX'].map((protocol) => (
                   <div 
                     key={protocol} 
                     className="flex items-center space-x-2 px-2 py-1.5 cursor-pointer hover:bg-accent"
@@ -824,8 +904,23 @@ export default function FundingArbitrageDashboard() {
                     <span>{protocol}</span>
                   </div>
                 ))}
-              </SelectContent>
-            </Select>
+                </SelectContent>
+              </Select>
+              </div>
+              
+              {/* Clear filters button */}
+              {(selectedAvailableProtocols.length > 0 || selectedProtocols.length > 0) && (
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={handleClearProtocolFilters}
+                  className="flex items-center gap-1 h-9"
+                >
+                  <X className="h-4 w-4" />
+                  Clear filters
+                </Button>
+              )}
+            </div>
           </div>
 
           <div className="rounded-md border overflow-x-auto">
