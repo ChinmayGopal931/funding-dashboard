@@ -551,7 +551,7 @@ export default function FundingArbitrageDashboard() {
             <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-6">
               {/* All Protocol filter */}
               <div className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3">
-                <label className="text-sm font-medium">All Platforms:</label>
+                <label className="text-sm font-medium">Platform:</label>
                 <Select 
                   value={selectedAvailableProtocols.length > 0 ? 'filtered' : 'all'}
                   onValueChange={(value) => {
