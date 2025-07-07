@@ -12,6 +12,8 @@ import DriftFundingRatesChart from '@/components/DriftFundingChart';
 import ZkLighterMultiFundingChart from '@/components/LighterRateChart';
 import FundingArbitrageDashboard from '@/components/Arbitrage/ComparisonTable';
 import ParadexFundingChart from '@/components/ParadexFundingChart';
+import AgentManager from '@/components/PositionBuilder.tsx/RouteTester';
+import { DriftTester } from '@/components/DriftTester';
 
 // Rest of your code remains the same
 
@@ -24,13 +26,20 @@ interface NavItem {
 }
 
 const navigationItems: NavItem[] = [
-  // {
-  //   id: 'arbitrage',
-  //   label: 'Arbitrage Scanner',
-  //   icon: <ArrowLeftRight className="h-5 w-5" />,
-  //   component: <FundingArbitrageWithDetails />,
-  //   description: 'Find cross-exchange and spot+perp arbitrage opportunities'
-  // },
+  {
+    id: 'test2',
+    label: 'Arbitrage tester',
+    icon: <ArrowLeftRight className="h-5 w-5" />,
+    component: <AgentManager />,
+    description: 'Test Server'
+  },
+    {
+    id: 'test',
+    label: 'Arbitrage drift tester',
+    icon: <ArrowLeftRight className="h-5 w-5" />,
+    component: <DriftTester />,
+    description: 'Test Server'
+  },
   {
     id: 'arbitrage',
     label: 'Arbitrage Scanner',
@@ -70,7 +79,7 @@ const navigationItems: NavItem[] = [
 ];
 
 export default function FundingDashboard() {
-  const [activeView, setActiveView] = useState('arbitrage');
+  const [activeView, setActiveView] = useState('test');
   const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const activeItem = navigationItems.find(item => item.id === activeView);

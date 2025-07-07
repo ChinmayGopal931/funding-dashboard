@@ -1,8 +1,24 @@
-// app/layout.tsx
-import type { Metadata } from "next";
+"use client";
+
+import { useState } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
 import { WebSocketProvider } from "@/contexts/WebSocketProvider";
+import { WagmiProvider } from "wagmi";
+import { RainbowKitProvider } from '@rainbow-me/rainbowkit';
+import { config } from "@/lib/wagmi";
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+
+import { ConnectionProvider, WalletProvider } from '@solana/wallet-adapter-react';
+import {
+  WalletModalProvider,
+} from '@solana/wallet-adapter-react-ui';
+
+import { PhantomWalletAdapter } from '@solana/wallet-adapter-phantom';
+import { clusterApiUrl } from '@solana/web3.js';
+
 import "./globals.css";
+import '@rainbow-me/rainbowkit/styles.css';
+import '@solana/wallet-adapter-react-ui/styles.css';
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -14,65 +30,6 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export const metadata: Metadata = {
-  title: "DEX Funding Rate Dashboard",
-  description:
-    "Compare and analyze funding rates across top decentralized exchanges like Drift, Hyperliquid, and more. Cross-chain, cross-DEX analytics built for traders and DeFi researchers.",
-  keywords: [
-    "DEX funding rates",
-    "Crypto funding rate dashboard",
-    "Cross-chain analytics",
-    "Cross-DEX funding rates",
-    "Drift funding rate",
-    "Hyperliquid funding",
-    "DeFi analytics",
-    "Funding rate arbitrage",
-    "Funding rate comparison",
-    "Delta-neutral strategy",
-  ],
-  metadataBase: new URL("https://dex-funding-dashboard.vercel.app"),
-  openGraph: {
-    title: "DEX Funding Rate Dashboard",
-    description:
-      "Cross-DEX, cross-chain funding rate analytics for advanced DeFi strategies. Analyze, compare, and uncover funding rate arbitrage opportunities.",
-    url: "https://dex-funding-dashboard.vercel.app",
-    siteName: "DEX Funding Dashboard",
-    images: [
-      {
-        url: "/og-image.png",
-        width: 1200,
-        height: 630,
-        alt: "DEX Funding Rate Dashboard",
-      },
-    ],
-    locale: "en_US",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "DEX Funding Rate Dashboard",
-    description:
-      "Visualize funding rate trends across DeFi exchanges. Support for Drift, Hyperliquid, and more coming soon.",
-    images: ["/og-image.png"],
-  },
-  robots: {
-    index: true,
-    follow: true,
-    googleBot: {
-      index: true,
-      follow: true,
-      "max-video-preview": -1,
-      "max-image-preview": "large",
-      "max-snippet": -1,
-    },
-  },
-  alternates: {
-    canonical: "/",
-  },
-  themeColor: "#ffffff",
-};
-
-// Structured data for better SEO
 const structuredData = {
   "@context": "https://schema.org",
   "@type": "WebSite",
@@ -96,13 +53,52 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const [queryClient] = useState(() => new QueryClient({
+    defaultOptions: {
+      queries: {
+        staleTime: 1000 * 30,
+        gcTime: 1000 * 60 * 5,
+        refetchOnWindowFocus: true,
+        refetchOnReconnect: true,
+        retry: (failureCount, error: Error) => {
+          if ('status' in error && typeof error.status === 'number' && error.status >= 400 && error.status < 500) {
+            return false;
+          }
+          return failureCount < 3;
+        },
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+        networkMode: 'online',
+      },
+      mutations: {
+        retry: false,
+        networkMode: 'online',
+        onError: (error) => {
+          console.error('Mutation failed:', error);
+        },
+      },
+    },
+  }));
+
+  const endpoint = clusterApiUrl('devnet'); // or use your custom Solana RPC
+  const wallets = [new PhantomWalletAdapter()];
+
   return (
     <html lang="en">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <WebSocketProvider>
-          {children}
-        </WebSocketProvider>
-        {/* JSON-LD structured data for enhanced SEO */}
+        <WagmiProvider config={config}>
+          <QueryClientProvider client={queryClient}>
+            <RainbowKitProvider>
+              <ConnectionProvider endpoint={endpoint}>
+                <WalletProvider wallets={wallets} autoConnect>
+                  <WalletModalProvider>
+                    {children}
+                  </WalletModalProvider>
+                </WalletProvider>
+              </ConnectionProvider>
+            </RainbowKitProvider>
+          </QueryClientProvider>
+        </WagmiProvider>
+
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
