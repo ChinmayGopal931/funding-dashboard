@@ -13,7 +13,7 @@ import ZkLighterMultiFundingChart from '@/components/LighterRateChart';
 import FundingArbitrageDashboard from '@/components/Arbitrage/ComparisonTable';
 import ParadexFundingChart from '@/components/ParadexFundingChart';
 import AgentManager from '@/components/PositionBuilder.tsx/RouteTester';
-import { DriftTester } from '@/components/DriftTester';
+import FristTester from '@/components/fristTester';
 
 // Rest of your code remains the same
 
@@ -37,7 +37,7 @@ const navigationItems: NavItem[] = [
     id: 'test',
     label: 'Arbitrage drift tester',
     icon: <ArrowLeftRight className="h-5 w-5" />,
-    component: <DriftTester />,
+    component: <FristTester />,
     description: 'Test Server'
   },
   {

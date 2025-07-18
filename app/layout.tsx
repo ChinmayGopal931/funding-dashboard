@@ -89,11 +89,11 @@ export default function RootLayout({
           <QueryClientProvider client={queryClient}>
             <RainbowKitProvider>
               <ConnectionProvider endpoint={endpoint}>
-                <WalletProvider wallets={wallets} autoConnect>
+                {/* <WalletProvider wallets={wallets} autoConnect> */}
                   <WalletModalProvider>
                     {children}
                   </WalletModalProvider>
-                </WalletProvider>
+                {/* </WalletProvider> */}
               </ConnectionProvider>
             </RainbowKitProvider>
           </QueryClientProvider>
